@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f3eadb;
+  --bg-alt: #eadcc3;
+  --ink: #111827;
+  --ink-soft: #465164;
+  --panel: rgba(255, 250, 242, 0.72);
+  --panel-strong: rgba(255, 248, 238, 0.9);
+  --line: rgba(17, 24, 39, 0.12);
+  --accent: #b14a2f;
+  --accent-strong: #8d351f;
+  --success: #176544;
+  --shadow: 0 24px 80px rgba(32, 22, 12, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background: radial-gradient(circle at top left, rgba(177, 74, 47, 0.1), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 35%), var(--bg);
+  font-family: var(--font-body), sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.grain::before {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.08;
+  background-image: linear-gradient(rgba(17, 24, 39, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(17, 24, 39, 0.04) 1px, transparent 1px);
+  background-size: 3px 3px, 3px 3px;
+  content: "";
+}
+
+.shell {
+  width: 90dvw;
+  margin: 0 auto;
+}
+
+.eyebrow {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.34);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+}
+
+.section-title {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-size: clamp(2.4rem, 5vw, 5.8rem);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+}
+
+.muted {
+  color: var(--ink-soft);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid rgba(17, 24, 39, 0.1);
+  backdrop-filter: blur(22px);
+  box-shadow: var(--shadow);
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --color-accent: var(--accent);
+  --color-border: var(--line);
+}
+
+@media (max-width: 900px) {
+  .shell {
+    width: 90dvw;
+  }
+}

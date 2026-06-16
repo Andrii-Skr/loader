@@ -1,0 +1,115 @@
+{
+  "Common": {
+    "appName": "PDF Loader",
+    "records": "{count} записів",
+    "pending": "очікування",
+    "backToCabinet": "Назад",
+    "viewStructure": "Подивитися структуру",
+    "logout": "Вийти",
+    "pageNotFound": "Сторінку не знайдено.",
+    "fieldManifest": "Структура полів",
+    "currentContour": "Поточний контур",
+    "restrictedRoom": "Закрита робоча зона"
+  },
+  "Login": {
+    "titleLine1": "Вхід до",
+    "titleLine2": "операційної",
+    "titleLine3": "панелі.",
+    "description": "Доступ до завантаження накладних, ручної перевірки та реєстру документів. Локальні акаунти через NextAuth з ролями admin та operator.",
+    "formTitle": "Введіть облікові дані",
+    "formDescription": "Сесія зберігається в базі даних.",
+    "loginLabel": "Логін",
+    "passwordLabel": "Пароль",
+    "submit": "Увійти",
+    "pending": "Перевірка доступу...",
+    "errors": {
+      "login": "Вкажіть логін не коротший за 3 символи.",
+      "password": "Пароль має містити щонайменше 8 символів.",
+      "invalidCredentials": "Невірний логін або пароль.",
+      "invalidInput": "Перевірте логін та пароль."
+    }
+  },
+  "Dashboard": {
+    "titleLine1": "Завантаження PDF",
+    "titleLine2": "",
+    "registryTitle": "Реєстр документів",
+    "registryDescription": "Останні завантаження та їх поточний статус.",
+    "documentDatePrefix": "від",
+    "emptyRegistry": "Реєстр порожній. Завантажте перший PDF.",
+    "deleteAction": "Видалити",
+    "deleteTitle": "Видалити документ?",
+    "deleteCancel": "Скасувати",
+    "deleteConfirm": "Видалити цей документ і всі рядки його специфікації?",
+    "table": {
+      "document": "Документ",
+      "supplier": "Постачальник",
+      "recipient": "Отримувач",
+      "amount": "Сума",
+      "status": "Статус",
+      "rows": "Рядки",
+      "actions": "Дії"
+    },
+    "messages": {
+      "missingSession": "Сесію не знайдено.",
+      "invalidInput": "Некоректний запит.",
+      "notFound": "Документ не знайдено.",
+      "deleteFailed": "Не вдалося видалити документ."
+    },
+    "status": {
+      "PENDING": "в черзі",
+      "PROCESSED": "готово",
+      "NEEDS_REVIEW": "потрібна перевірка",
+      "FAILED": "помилка"
+    }
+  },
+  "DocumentDetails": {
+    "eyebrow": "Перегляд документа",
+    "documentTitle": "Документ",
+    "documentDatePrefix": "від",
+    "supplierTitle": "Постачальник",
+    "recipientTitle": "Отримувач",
+    "amountsTitle": "Суми",
+    "total": "Разом",
+    "vat": "ПДВ",
+    "base": "Без ПДВ",
+    "lineItemsTitle": "Рядки документа",
+    "lineItemsDescription": "Рядки, витягнуті з розділу Б накладної.",
+    "emptyLineItems": "Рядки документа не витягнуті.",
+    "table": {
+      "lineNo": "Рядок",
+      "description": "Опис",
+      "quantity": "Кількість",
+      "unitPrice": "Ціна",
+      "baseAmount": "Сума без ПДВ",
+      "vatAmount": "ПДВ"
+    },
+    "status": {
+      "PENDING": "в черзі",
+      "PROCESSED": "готово",
+      "NEEDS_REVIEW": "потрібна перевірка",
+      "FAILED": "помилка"
+    }
+  },
+  "UploadForm": {
+    "pdfLabel": "PDF-файли",
+    "dropzoneTitle": "Перетягніть PDF сюди або натисніть для вибору",
+    "dropzoneBody": "Завантажте один або кілька PDF для автоматичного витягу та парсингу.",
+    "dropzoneHint": "Підтримуються лише PDF-файли.",
+    "selectedFilesHint": "Вибрано PDF: {count}",
+    "submit": "Завантажити документ",
+    "pending": "Завантаження...",
+    "messages": {
+      "missingSession": "Сесію не знайдено.",
+      "missingPdf": "Оберіть PDF-файл.",
+      "invalidInput": "Некоректні дані форми.",
+      "duplicateDocument": "Цей документ уже є в реєстрі.",
+      "savedAndParsed": "Документ збережено та розібрано.",
+      "batchSummary": "Завантажено: {success}. Дублікатів: {duplicates}. Помилок: {failed}.",
+      "parseFailedPrefix": "Помилка парсингу",
+      "pdfReadFailed": "Не вдалося прочитати текст із PDF",
+      "pdfHasNoTextLayer": "У PDF немає читабельного текстового шару. Потрібен OCR.",
+      "pdfOcrFailed": "OCR fallback завершився помилкою",
+      "pdfOcrUnavailable": "OCR недоступний: не вдалося завантажити мовні дані"
+    }
+  }
+}

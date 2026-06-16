@@ -1,0 +1,115 @@
+{
+  "Common": {
+    "appName": "PDF Loader",
+    "records": "{count} records",
+    "pending": "pending",
+    "backToCabinet": "Back",
+    "viewStructure": "View structure",
+    "logout": "Sign out",
+    "pageNotFound": "Page not found.",
+    "fieldManifest": "Field manifest",
+    "currentContour": "Current contour",
+    "restrictedRoom": "Restricted ledger room"
+  },
+  "Login": {
+    "titleLine1": "Access to",
+    "titleLine2": "the operating",
+    "titleLine3": "panel.",
+    "description": "Access to invoice uploads, manual review and the document registry. Local accounts via NextAuth with admin and operator roles.",
+    "formTitle": "Enter credentials",
+    "formDescription": "Session is stored in the database.",
+    "loginLabel": "Login",
+    "passwordLabel": "Password",
+    "submit": "Sign in",
+    "pending": "Checking access...",
+    "errors": {
+      "login": "Enter a login with at least 3 characters.",
+      "password": "Password must be at least 8 characters.",
+      "invalidCredentials": "Invalid login or password.",
+      "invalidInput": "Check login and password."
+    }
+  },
+  "Dashboard": {
+    "titleLine1": "PDF Upload",
+    "titleLine2": "",
+    "registryTitle": "Document registry",
+    "registryDescription": "Latest uploads and their current status.",
+    "documentDatePrefix": "dated",
+    "emptyRegistry": "Registry is empty. Upload the first PDF.",
+    "deleteAction": "Delete",
+    "deleteTitle": "Delete document?",
+    "deleteCancel": "Cancel",
+    "deleteConfirm": "Delete this document and all its line items?",
+    "table": {
+      "document": "Document",
+      "supplier": "Supplier",
+      "recipient": "Recipient",
+      "amount": "Amount",
+      "status": "Status",
+      "rows": "Rows",
+      "actions": "Actions"
+    },
+    "messages": {
+      "missingSession": "Session was not found.",
+      "invalidInput": "Invalid request.",
+      "notFound": "Document was not found.",
+      "deleteFailed": "Could not delete the document."
+    },
+    "status": {
+      "PENDING": "queued",
+      "PROCESSED": "done",
+      "NEEDS_REVIEW": "needs review",
+      "FAILED": "error"
+    }
+  },
+  "DocumentDetails": {
+    "eyebrow": "Document view",
+    "documentTitle": "Document",
+    "documentDatePrefix": "dated",
+    "supplierTitle": "Supplier",
+    "recipientTitle": "Recipient",
+    "amountsTitle": "Amounts",
+    "total": "Total",
+    "vat": "VAT",
+    "base": "Excl. VAT",
+    "lineItemsTitle": "Line items",
+    "lineItemsDescription": "Rows extracted from section B of the invoice.",
+    "emptyLineItems": "No line items were extracted.",
+    "table": {
+      "lineNo": "Row",
+      "description": "Description",
+      "quantity": "Quantity",
+      "unitPrice": "Unit price",
+      "baseAmount": "Base amount",
+      "vatAmount": "VAT"
+    },
+    "status": {
+      "PENDING": "queued",
+      "PROCESSED": "done",
+      "NEEDS_REVIEW": "needs review",
+      "FAILED": "error"
+    }
+  },
+  "UploadForm": {
+    "pdfLabel": "PDF files",
+    "dropzoneTitle": "Drop PDFs here or click to choose",
+    "dropzoneBody": "Upload one or more PDFs for automatic extraction and parsing.",
+    "dropzoneHint": "Only PDF files are accepted.",
+    "selectedFilesHint": "Selected PDFs: {count}",
+    "submit": "Upload document",
+    "pending": "Uploading...",
+    "messages": {
+      "missingSession": "Session was not found.",
+      "missingPdf": "Choose a PDF file.",
+      "invalidInput": "Invalid form data.",
+      "duplicateDocument": "This document is already in the registry.",
+      "savedAndParsed": "Document was saved and parsed.",
+      "batchSummary": "Uploaded: {success}. Duplicates: {duplicates}. Errors: {failed}.",
+      "parseFailedPrefix": "Parsing error",
+      "pdfReadFailed": "Could not read text from the PDF",
+      "pdfHasNoTextLayer": "PDF does not contain a readable text layer. OCR is required.",
+      "pdfOcrFailed": "OCR fallback failed",
+      "pdfOcrUnavailable": "OCR is unavailable because language data could not be loaded"
+    }
+  }
+}

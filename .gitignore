@@ -1,0 +1,10 @@
+.next
+node_modules
+.env
+.env.local
+coverage
+dist
+storage/uploads
+src/generated/prisma
+
+/temp

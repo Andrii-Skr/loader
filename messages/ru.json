@@ -1,0 +1,115 @@
+{
+  "Common": {
+    "appName": "PDF Loader",
+    "records": "{count} записей",
+    "pending": "ожидание",
+    "backToCabinet": "Назад",
+    "viewStructure": "Посмотреть структуру",
+    "logout": "Выйти",
+    "pageNotFound": "Страница не найдена.",
+    "fieldManifest": "Структура полей",
+    "currentContour": "Текущий контур",
+    "restrictedRoom": "Закрытая рабочая зона"
+  },
+  "Login": {
+    "titleLine1": "Вход в",
+    "titleLine2": "операционную",
+    "titleLine3": "панель.",
+    "description": "Доступ к загрузке накладных, ручной проверке и реестру документов. Локальные аккаунты через NextAuth с ролями admin и operator.",
+    "formTitle": "Введите учетные данные",
+    "formDescription": "Сессия хранится в базе данных.",
+    "loginLabel": "Логин",
+    "passwordLabel": "Пароль",
+    "submit": "Войти",
+    "pending": "Проверка доступа...",
+    "errors": {
+      "login": "Укажите логин не короче 3 символов.",
+      "password": "Пароль должен содержать не менее 8 символов.",
+      "invalidCredentials": "Неверный логин или пароль.",
+      "invalidInput": "Проверьте логин и пароль."
+    }
+  },
+  "Dashboard": {
+    "titleLine1": "Загрузка PDF",
+    "titleLine2": "",
+    "registryTitle": "Реестр документов",
+    "registryDescription": "Последние загрузки и их текущий статус.",
+    "documentDatePrefix": "от",
+    "emptyRegistry": "Реестр пуст. Загрузите первый PDF.",
+    "deleteAction": "Удалить",
+    "deleteTitle": "Удалить документ?",
+    "deleteCancel": "Отмена",
+    "deleteConfirm": "Удалить этот документ и все его строки спецификации?",
+    "table": {
+      "document": "Документ",
+      "supplier": "Поставщик",
+      "recipient": "Получатель",
+      "amount": "Сумма",
+      "status": "Статус",
+      "rows": "Строки",
+      "actions": "Действия"
+    },
+    "messages": {
+      "missingSession": "Сессия не найдена.",
+      "invalidInput": "Некорректный запрос.",
+      "notFound": "Документ не найден.",
+      "deleteFailed": "Не удалось удалить документ."
+    },
+    "status": {
+      "PENDING": "в очереди",
+      "PROCESSED": "готово",
+      "NEEDS_REVIEW": "нужна проверка",
+      "FAILED": "ошибка"
+    }
+  },
+  "DocumentDetails": {
+    "eyebrow": "Просмотр документа",
+    "documentTitle": "Документ",
+    "documentDatePrefix": "от",
+    "supplierTitle": "Поставщик",
+    "recipientTitle": "Получатель",
+    "amountsTitle": "Суммы",
+    "total": "Итого",
+    "vat": "НДС",
+    "base": "Без НДС",
+    "lineItemsTitle": "Строки документа",
+    "lineItemsDescription": "Строки, извлеченные из раздела Б накладной.",
+    "emptyLineItems": "Строки документа не извлечены.",
+    "table": {
+      "lineNo": "Строка",
+      "description": "Описание",
+      "quantity": "Количество",
+      "unitPrice": "Цена",
+      "baseAmount": "Сумма без НДС",
+      "vatAmount": "НДС"
+    },
+    "status": {
+      "PENDING": "в очереди",
+      "PROCESSED": "готово",
+      "NEEDS_REVIEW": "нужна проверка",
+      "FAILED": "ошибка"
+    }
+  },
+  "UploadForm": {
+    "pdfLabel": "PDF-файлы",
+    "dropzoneTitle": "Перетащите PDF сюда или нажмите для выбора",
+    "dropzoneBody": "Загрузите один или несколько PDF для автоматического извлечения и парсинга.",
+    "dropzoneHint": "Поддерживаются только PDF-файлы.",
+    "selectedFilesHint": "Выбрано PDF: {count}",
+    "submit": "Загрузить документ",
+    "pending": "Загрузка...",
+    "messages": {
+      "missingSession": "Сессия не найдена.",
+      "missingPdf": "Выберите PDF-файл.",
+      "invalidInput": "Некорректные данные формы.",
+      "duplicateDocument": "Этот документ уже есть в реестре.",
+      "savedAndParsed": "Документ сохранен и разобран.",
+      "batchSummary": "Загружено: {success}. Дубликатов: {duplicates}. Ошибок: {failed}.",
+      "parseFailedPrefix": "Ошибка парсинга",
+      "pdfReadFailed": "Не удалось прочитать текст из PDF",
+      "pdfHasNoTextLayer": "В PDF нет читаемого текстового слоя. Нужен OCR.",
+      "pdfOcrFailed": "OCR fallback завершился ошибкой",
+      "pdfOcrUnavailable": "OCR недоступен: не удалось загрузить языковые данные"
+    }
+  }
+}
