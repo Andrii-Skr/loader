@@ -31,6 +31,7 @@ export default function RootLayout({
     <html
       lang="uk"
       data-scroll-behavior="smooth"
+      suppressHydrationWarning
       className={`${displayFont.variable} ${bodyFont.variable}`}
     >
       <body className="grain">{children}</body>

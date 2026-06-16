@@ -6,7 +6,7 @@ function TableShell({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "overflow-auto rounded-[24px] border border-[rgba(17,24,39,0.1)] bg-[rgba(255,250,242,0.64)]",
+        "overflow-auto rounded-[24px] border border-[color:var(--line)] bg-[color:var(--panel)]",
         className,
       )}
       {...props}
@@ -29,7 +29,7 @@ function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
 function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   return (
     <tr
-      className={cn("border-b border-[rgba(17,24,39,0.08)] transition-colors", className)}
+      className={cn("border-b border-[color:var(--line)] transition-colors", className)}
       {...props}
     />
   );
@@ -39,7 +39,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   return (
     <th
       className={cn(
-        "px-4 py-[14px] text-left align-top text-[0.8rem] font-semibold tracking-[0.08em] text-[color:var(--ink-soft)] uppercase",
+        "px-4 py-[14px] text-left align-top text-[0.8rem] font-semibold tracking-[0.08em] text-[color:var(--ink)] uppercase",
         className,
       )}
       {...props}

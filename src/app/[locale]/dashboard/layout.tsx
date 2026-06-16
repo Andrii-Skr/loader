@@ -2,6 +2,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import type { ReactNode } from "react";
 
 import { auth, signOut } from "@/auth";
+import { HeaderControls } from "@/components/layout/header-controls";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Link, redirect } from "@/i18n/navigation";
@@ -49,16 +50,42 @@ export default async function LocalizedDashboardLayout({
               {userLabel} · {roleLabel}
             </span>
           </div>
-          <form
-            action={async () => {
-              "use server";
-              await signOut({ redirectTo: `/${locale}/login` });
-            }}
-          >
-            <Button type="submit" variant="secondary">
-              {common("logout")}
-            </Button>
-          </form>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <HeaderControls
+              currentLocale={locale}
+              headerControlsLabel={common("headerControlsLabel")}
+              languageLabel={common("language")}
+              localeLabels={{
+                en: common("localeEn"),
+                ru: common("localeRu"),
+                uk: common("localeUk"),
+              }}
+              themeLabel={common("theme")}
+              themeLabels={{
+                dark: common("themeDark"),
+                light: common("themeLight"),
+                system: common("themeSystem"),
+              }}
+            />
+            <div className="header-control header-control--action">
+              <div className="header-control__segmented header-control__segmented--action">
+                <form
+                  action={async () => {
+                    "use server";
+                    await signOut({ redirectTo: `/${locale}/login` });
+                  }}
+                >
+                  <Button
+                    className="header-control__chip header-control__chip--action"
+                    type="submit"
+                    variant="ghost"
+                  >
+                    {common("logout")}
+                  </Button>
+                </form>
+              </div>
+            </div>
+          </div>
         </Card>
         {children}
       </div>

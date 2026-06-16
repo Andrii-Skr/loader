@@ -49,7 +49,7 @@ export function DeleteDocumentButton({ documentId, locale }: DeleteDocumentButto
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent
-          className="rounded-[28px] border-[rgba(17,24,39,0.1)] bg-[color:var(--panel-strong)] shadow-[var(--shadow)]"
+          className="rounded-[28px] border-[color:var(--line)] bg-[color:var(--panel-strong)] shadow-[var(--shadow)]"
           size="sm"
         >
           <AlertDialogHeader className="place-items-start text-left">

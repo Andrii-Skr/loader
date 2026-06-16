@@ -99,8 +99,8 @@ export default async function LocalizedDashboardPage({
           style={{
             padding: 22,
             borderRadius: 28,
-            background: "rgba(255, 250, 242, 0.88)",
-            border: "1px solid rgba(17, 24, 39, 0.08)",
+            background: "var(--panel-strong)",
+            border: "1px solid var(--line)",
           }}
         >
           <UploadInvoiceForm />

@@ -46,7 +46,8 @@ describe("ingestVatInvoice", () => {
     );
     parserMocks.parsePublicationIssueDescription.mockReturnValue({
       publicationName: "Філворди.Спецвипуск",
-      issueNumber: "4/саморобка/",
+      rawIssueNumber: "4/саморобка/",
+      canonicalIssueNumber: "04-26 (саморобка)",
     });
 
     const document = await ingestVatInvoice({
@@ -73,7 +74,8 @@ describe("ingestVatInvoice", () => {
     );
     parserMocks.parsePublicationIssueDescription.mockReturnValue({
       publicationName: "Філворди.Спецвипуск",
-      issueNumber: "4/саморобка/",
+      rawIssueNumber: "4/саморобка/",
+      canonicalIssueNumber: "04-26 (саморобка)",
     });
 
     await ingestVatInvoice({
@@ -94,6 +96,44 @@ describe("ingestVatInvoice", () => {
     expect(prismaState.tx.store.issueNumbers.size).toBe(1);
     expect(prismaState.tx.store.publicationIssues.size).toBe(1);
     expect(secondPublicationIssueId).toBe(firstPublicationIssueId);
+  });
+
+  it("deduplicates raw and canonical issue variants into one issue number", async () => {
+    parserMocks.parseVatInvoiceUaV1.mockReturnValue(
+      createParsedInvoice({
+        lineItems: [createLineItem('ж-л "Філворди" №4')],
+      }),
+    );
+    parserMocks.parsePublicationIssueDescription
+      .mockReturnValueOnce({
+        publicationName: "Філворди",
+        rawIssueNumber: "4",
+        canonicalIssueNumber: "04-26",
+      })
+      .mockReturnValueOnce({
+        publicationName: "Філворди",
+        rawIssueNumber: "04-26",
+        canonicalIssueNumber: "04-26",
+      });
+
+    await ingestVatInvoice({
+      documentId: 211,
+      rawText: "first raw text",
+    });
+
+    await ingestVatInvoice({
+      documentId: 212,
+      rawText: "second raw text",
+    });
+
+    expect(prismaState.tx.store.issueNumbers.size).toBe(1);
+    expect(Array.from(prismaState.tx.store.issueNumbers.values())).toEqual([
+      expect.objectContaining({
+        rawValue: "4",
+        canonicalValue: "04-26",
+        normalizedValue: "04-26",
+      }),
+    ]);
   });
 
   it("marks document for review when publication issue parsing fails", async () => {
@@ -132,7 +172,8 @@ describe("ingestVatInvoice", () => {
     parserMocks.parsePublicationIssueDescription
       .mockReturnValueOnce({
         publicationName: "Філворди",
-        issueNumber: "4",
+        rawIssueNumber: "4",
+        canonicalIssueNumber: "04-26",
       })
       .mockReturnValueOnce(null);
 
@@ -197,7 +238,10 @@ function createLineItem(description: string) {
 function createTransactionMock() {
   const store = {
     publications: new Map<string, { id: number; displayName: string; normalizedName: string }>(),
-    issueNumbers: new Map<string, { id: number; displayValue: string; normalizedValue: string }>(),
+    issueNumbers: new Map<
+      string,
+      { id: number; rawValue: string; canonicalValue: string; normalizedValue: string }
+    >(),
     publicationIssues: new Map<
       string,
       { id: number; publicationId: number; issueNumberId: number }
@@ -258,13 +302,13 @@ function createTransactionMock() {
           create,
         }: {
           where: { normalizedValue: string };
-          update: { displayValue: string };
-          create: { displayValue: string; normalizedValue: string };
+          update: { canonicalValue: string };
+          create: { rawValue: string; canonicalValue: string; normalizedValue: string };
         }) => {
           const existing = store.issueNumbers.get(where.normalizedValue);
 
           if (existing) {
-            const updated = { ...existing, displayValue: update.displayValue };
+            const updated = { ...existing, canonicalValue: update.canonicalValue };
             store.issueNumbers.set(where.normalizedValue, updated);
             return updated;
           }

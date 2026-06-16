@@ -109,7 +109,8 @@ model Publication {
 
 model IssueNumber {
   id                Int                @id @default(autoincrement())
-  displayValue      String             @map("display_value")
+  rawValue          String             @map("raw_value")
+  canonicalValue    String             @map("canonical_value")
   normalizedValue   String             @unique @map("normalized_value")
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")

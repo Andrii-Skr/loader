@@ -14,9 +14,9 @@ const buttonVariants = cva(
         destructive:
           "bg-[color:var(--accent-strong)] text-[rgba(255,250,242,0.98)] hover:-translate-y-px hover:bg-[#742717] focus-visible:ring-[rgba(141,53,31,0.24)]",
         outline:
-          "border border-[rgba(17,24,39,0.14)] bg-[rgba(255,255,255,0.78)] text-[color:var(--ink)] hover:-translate-y-px hover:bg-[rgba(255,250,242,0.96)]",
+          "border border-[color:var(--line)] bg-[color:var(--panel-strong)] text-[color:var(--ink)] hover:-translate-y-px hover:bg-[color:var(--panel)]",
         secondary:
-          "border border-[rgba(17,24,39,0.1)] bg-[rgba(255,250,242,0.88)] text-[color:var(--ink)] hover:-translate-y-px hover:bg-[rgba(255,245,234,0.98)]",
+          "border border-[color:var(--line)] bg-[color:var(--panel)] text-[color:var(--ink)] hover:-translate-y-px hover:bg-[color:var(--panel-strong)]",
         ghost:
           "text-[color:var(--ink)] shadow-none hover:bg-[rgba(177,74,47,0.1)] hover:text-[color:var(--accent-strong)]",
         link: "rounded-none p-0 text-[color:var(--accent-strong)] shadow-none underline-offset-4 hover:text-[color:var(--accent)] hover:underline",

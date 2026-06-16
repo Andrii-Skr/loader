@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parsePublicationIssueDescription, parseVatInvoiceUaV1 } from "@/lib/pdf/parser";
+import {
+  canonicalizeIssueNumber,
+  parsePublicationIssueDescription,
+  parseVatInvoiceUaV1,
+} from "@/lib/pdf/parser";
 
 const sampleText = `Зведена податкова накладна
 Податкова накладна 1 0 0 4 2 0 2 6 1 8 /
@@ -218,28 +222,39 @@ VII Усього обсяги постачання за ставкою 7% (ко�
 });
 
 describe("parsePublicationIssueDescription", () => {
+  const documentDate = "23.04.2026";
+
   it("extracts publication and issue from a journal description with technical suffixes", () => {
     expect(
-      parsePublicationIssueDescription('ж-л " 1000 порад Кейворди " ( R )*96 стр №4 А4'),
+      parsePublicationIssueDescription(
+        'ж-л " 1000 порад Кейворди " ( R )*96 стр №4 А4',
+        documentDate,
+      ),
     ).toEqual({
       publicationName: "1000 порад Кейворди (R)",
-      issueNumber: "4",
+      rawIssueNumber: "4",
+      canonicalIssueNumber: "04-26",
     });
   });
 
   it("keeps issue text with slash suffix", () => {
     expect(
-      parsePublicationIssueDescription('ж-л "Філворди.Спецвипуск №4/саморобка/ *64 стр /укр'),
+      parsePublicationIssueDescription(
+        'ж-л "Філворди.Спецвипуск №4/саморобка/ *64 стр /укр',
+        documentDate,
+      ),
     ).toEqual({
       publicationName: "Філворди.Спецвипуск",
-      issueNumber: "4 (саморобка)",
+      rawIssueNumber: "4 (саморобка)",
+      canonicalIssueNumber: "04-26 (саморобка)",
     });
   });
 
   it("removes A4/ukr technical suffixes from the issue number", () => {
-    expect(parsePublicationIssueDescription('ж-л "Філворди" №5 А4/укр/')).toEqual({
+    expect(parsePublicationIssueDescription('ж-л "Філворди" №5 А4/укр/', documentDate)).toEqual({
       publicationName: "Філворди",
-      issueNumber: "5",
+      rawIssueNumber: "5",
+      canonicalIssueNumber: "05-26",
     });
   });
 
@@ -247,43 +262,60 @@ describe("parsePublicationIssueDescription", () => {
     expect(
       parsePublicationIssueDescription(
         'Послуга друку газети "Філворди. Спецвипуск" (р) №4-26 (саморобки)',
+        documentDate,
       ),
     ).toEqual({
       publicationName: "Філворди. Спецвипуск (р)",
-      issueNumber: "4-26 (саморобки)",
+      rawIssueNumber: "4-26 (саморобки)",
+      canonicalIssueNumber: "04-26 (саморобки)",
     });
   });
 
   it("returns null when description does not contain an issue marker", () => {
-    expect(parsePublicationIssueDescription("Послуги з пакування")).toBeNull();
+    expect(parsePublicationIssueDescription("Послуги з пакування", documentDate)).toBeNull();
   });
 
   it("removes trailing slash garbage from the publication name", () => {
-    expect(parsePublicationIssueDescription('ж-л "Моя кума / тут / № 4')).toEqual({
+    expect(parsePublicationIssueDescription('ж-л "Моя кума / тут / № 4', documentDate)).toEqual({
       publicationName: "Моя кума",
-      issueNumber: "4",
+      rawIssueNumber: "4",
+      canonicalIssueNumber: "04-26",
     });
   });
 
   it("removes a dangling trailing slash from the publication name", () => {
-    expect(parsePublicationIssueDescription('ж-л "Моя кума/ № 4')).toEqual({
+    expect(parsePublicationIssueDescription('ж-л "Моя кума/ № 4', documentDate)).toEqual({
       publicationName: "Моя кума",
-      issueNumber: "4",
+      rawIssueNumber: "4",
+      canonicalIssueNumber: "04-26",
     });
   });
 
   it("preserves a meaningful /R/ suffix as part of the publication", () => {
-    expect(parsePublicationIssueDescription('ж-л "Філворди" /R/ № 4')).toEqual({
+    expect(parsePublicationIssueDescription('ж-л "Філворди" /R/ № 4', documentDate)).toEqual({
       publicationName: "Філворди (R)",
-      issueNumber: "4",
+      rawIssueNumber: "4",
+      canonicalIssueNumber: "04-26",
     });
   });
 
   it("removes embedded star-page tokens before a trailing marker", () => {
-    expect(parsePublicationIssueDescription('ж-л "Тещині млинці *80 стр (R) № 4')).toEqual({
+    expect(
+      parsePublicationIssueDescription('ж-л "Тещині млинці *80 стр (R) № 4', documentDate),
+    ).toEqual({
       publicationName: "Тещині млинці (R)",
-      issueNumber: "4",
+      rawIssueNumber: "4",
+      canonicalIssueNumber: "04-26",
     });
+  });
+
+  it("canonicalizes slash issue numbers with the invoice year", () => {
+    expect(canonicalizeIssueNumber("4/2", documentDate)).toBe("04/2-26");
+    expect(canonicalizeIssueNumber("4/2 (саморобка)", documentDate)).toBe("04/2-26 (саморобка)");
+  });
+
+  it("keeps an explicit year suffix from the issue itself", () => {
+    expect(canonicalizeIssueNumber("4-25", documentDate)).toBe("04-25");
   });
 
   it.each([
@@ -291,115 +323,131 @@ describe("parsePublicationIssueDescription", () => {
       description: 'ж-л "Філворди" №5 А4/укр/',
       expected: {
         publicationName: "Філворди",
-        issueNumber: "5",
+        rawIssueNumber: "5",
+        canonicalIssueNumber: "05-26",
       },
     },
     {
       description: 'ж-л "Філворди" №5 А5',
       expected: {
         publicationName: "Філворди",
-        issueNumber: "5",
+        rawIssueNumber: "5",
+        canonicalIssueNumber: "05-26",
       },
     },
     {
       description: 'ж-л "Філворди" /R/ №5',
       expected: {
         publicationName: "Філворди (R)",
-        issueNumber: "5",
+        rawIssueNumber: "5",
+        canonicalIssueNumber: "05-26",
       },
     },
     {
       description: 'ж-л "1000 порад.Сканворди" ( R ) №12',
       expected: {
         publicationName: "1000 порад.Сканворди (R)",
-        issueNumber: "12",
+        rawIssueNumber: "12",
+        canonicalIssueNumber: "12-26",
       },
     },
     {
       description: 'ж-л "Моя кума/" №4',
       expected: {
         publicationName: "Моя кума",
-        issueNumber: "4",
+        rawIssueNumber: "4",
+        canonicalIssueNumber: "04-26",
       },
     },
     {
       description: 'ж-л "Філворди" №5 /укр/',
       expected: {
         publicationName: "Філворди",
-        issueNumber: "5",
+        rawIssueNumber: "5",
+        canonicalIssueNumber: "05-26",
       },
     },
     {
       description: 'ж-л "Філворди" №4-26 ( саморобки)',
       expected: {
         publicationName: "Філворди",
-        issueNumber: "4-26 (саморобки)",
+        rawIssueNumber: "4-26 (саморобки)",
+        canonicalIssueNumber: "04-26 (саморобки)",
       },
     },
     {
       description: 'ж-л "Філворди" №4/саморобка/',
       expected: {
         publicationName: "Філворди",
-        issueNumber: "4 (саморобка)",
+        rawIssueNumber: "4 (саморобка)",
+        canonicalIssueNumber: "04-26 (саморобка)",
       },
     },
     {
       description: 'послуга з друку газети "Тещин пиріг. Спецвипуск" №4',
       expected: {
         publicationName: "Тещин пиріг. Спецвипуск",
-        issueNumber: "4",
+        rawIssueNumber: "4",
+        canonicalIssueNumber: "04-26",
       },
     },
     {
       description: 'ж-л "Філворди" №5/укр/В4',
       expected: {
         publicationName: "Філворди",
-        issueNumber: "5",
+        rawIssueNumber: "5",
+        canonicalIssueNumber: "05-26",
       },
     },
     {
       description: 'ж-л "Філворди" №4 В4',
       expected: {
         publicationName: "Філворди",
-        issueNumber: "4",
+        rawIssueNumber: "4",
+        canonicalIssueNumber: "04-26",
       },
     },
     {
       description: 'ж-л "Філворди" №4/2, спецвипуск',
       expected: {
         publicationName: "Філворди",
-        issueNumber: "4/2",
+        rawIssueNumber: "4/2",
+        canonicalIssueNumber: "04/2-26",
       },
     },
     {
       description: 'ж-л "Філворди" №4, спецвипуск',
       expected: {
         publicationName: "Філворди",
-        issueNumber: "4",
+        rawIssueNumber: "4",
+        canonicalIssueNumber: "04-26",
       },
     },
     {
       description: 'ж-л "Кейворди"*64 стр А5 /укр/ №9',
       expected: {
         publicationName: "Кейворди",
-        issueNumber: "9",
+        rawIssueNumber: "9",
+        canonicalIssueNumber: "09-26",
       },
     },
     {
       description: 'ж-л " Суцвіття сканвордів"(R)*32 стор №4 В4',
       expected: {
         publicationName: "Суцвіття сканвордів (R)",
-        issueNumber: "4",
+        rawIssueNumber: "4",
+        canonicalIssueNumber: "04-26",
       },
     },
     {
       description: 'ж-л "Суцвіття сканвордів" 32 стор №4',
       expected: {
         publicationName: "Суцвіття сканвордів",
-        issueNumber: "4",
+        rawIssueNumber: "4",
+        canonicalIssueNumber: "04-26",
       },
     },
   ])("normalizes publication/issue variants: $description", ({ description, expected }) => {
-    expect(parsePublicationIssueDescription(description)).toEqual(expected);
+    expect(parsePublicationIssueDescription(description, documentDate)).toEqual(expected);
   });
 });

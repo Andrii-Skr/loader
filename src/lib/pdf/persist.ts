@@ -36,7 +36,10 @@ export const ingestVatInvoice = async ({ documentId, rawText }: IngestVatInvoice
 
     const lineItemsWithPublicationIssue = await Promise.all(
       parsed.lineItems.map(async (item) => {
-        const publicationIssue = parsePublicationIssueDescription(item.description);
+        const publicationIssue = parsePublicationIssueDescription(
+          item.description,
+          parsed.documentDate,
+        );
 
         if (!publicationIssue) {
           return {
@@ -56,11 +59,14 @@ export const ingestVatInvoice = async ({ documentId, rawText }: IngestVatInvoice
         });
 
         const issueNumber = await tx.issueNumber.upsert({
-          where: { normalizedValue: normalizeLookupKey(publicationIssue.issueNumber) },
-          update: { displayValue: publicationIssue.issueNumber },
+          where: { normalizedValue: normalizeLookupKey(publicationIssue.canonicalIssueNumber) },
+          update: {
+            canonicalValue: publicationIssue.canonicalIssueNumber,
+          },
           create: {
-            displayValue: publicationIssue.issueNumber,
-            normalizedValue: normalizeLookupKey(publicationIssue.issueNumber),
+            rawValue: publicationIssue.rawIssueNumber,
+            canonicalValue: publicationIssue.canonicalIssueNumber,
+            normalizedValue: normalizeLookupKey(publicationIssue.canonicalIssueNumber),
           },
         });
 

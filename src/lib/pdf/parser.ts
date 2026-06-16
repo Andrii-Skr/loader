@@ -34,7 +34,8 @@ export type ParsedVatInvoice = {
 
 export type ParsedPublicationIssue = {
   publicationName: string;
-  issueNumber: string;
+  rawIssueNumber: string;
+  canonicalIssueNumber: string;
 };
 
 const normalizeSpaces = (value: string): string => value.replace(/\s+/g, " ").trim();
@@ -302,8 +303,36 @@ const normalizeIssueNumber = (value: string): string => {
     .replace(/\s+\)/gu, ")");
 };
 
+const toIssueYearSuffix = (documentDate: string): string => {
+  const parts = documentDate.split(".");
+  const year = parts[2];
+
+  if (!year || !/^\d{4}$/.test(year)) {
+    throw new Error(`Invalid document date for canonical issue number: ${documentDate}`);
+  }
+
+  return year.slice(-2);
+};
+
+export const canonicalizeIssueNumber = (rawIssueNumber: string, documentDate: string): string => {
+  const normalized = normalizeIssueNumber(rawIssueNumber);
+  const match = normalized.match(/^(\d+)(?:\/(\d+))?(?:-(\d{2}))?(\s*\(.+\))?$/u);
+
+  if (!match?.[1]) {
+    return normalized;
+  }
+
+  const primary = match[1].padStart(2, "0");
+  const fraction = match[2] ? `/${match[2]}` : "";
+  const yearSuffix = match[3] ?? toIssueYearSuffix(documentDate);
+  const trailingLabel = match[4] ? normalizeSpaces(match[4]) : "";
+
+  return `${primary}${fraction}-${yearSuffix}${trailingLabel ? ` ${trailingLabel}` : ""}`;
+};
+
 export const parsePublicationIssueDescription = (
   description: string,
+  documentDate: string,
 ): ParsedPublicationIssue | null => {
   const issueMarkerIndex = description.indexOf("№");
 
@@ -314,15 +343,16 @@ export const parsePublicationIssueDescription = (
   const rawPublication = description.slice(0, issueMarkerIndex);
   const rawIssue = description.slice(issueMarkerIndex);
   const publicationName = normalizePublicationName(rawPublication);
-  const issueNumber = normalizeIssueNumber(rawIssue);
+  const normalizedRawIssueNumber = normalizeIssueNumber(rawIssue);
 
-  if (!publicationName || !issueNumber) {
+  if (!publicationName || !normalizedRawIssueNumber) {
     return null;
   }
 
   return {
     publicationName,
-    issueNumber,
+    rawIssueNumber: normalizedRawIssueNumber,
+    canonicalIssueNumber: canonicalizeIssueNumber(normalizedRawIssueNumber, documentDate),
   };
 };
 

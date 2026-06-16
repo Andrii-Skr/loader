@@ -32,6 +32,17 @@ const formatCurrency = (
   return formatter.number(amount, { style: "currency", currency: "UAH" });
 };
 
+const formatDecimal = (
+  formatter: Awaited<ReturnType<typeof getFormatter>>,
+  value: number | string | { toString(): string },
+) => {
+  const amount = typeof value === "number" ? value : Number(value.toString());
+  return formatter.number(amount, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  });
+};
+
 const formatDocumentLabel = ({
   documentType,
   documentNumber,
@@ -191,9 +202,9 @@ export default async function DocumentDetailsPage({
                 <TableHead>{t("table.lineNo")}</TableHead>
                 <TableHead>{t("table.description")}</TableHead>
                 <TableHead>{t("table.quantity")}</TableHead>
-                <TableHead>{t("table.unitPrice")}</TableHead>
-                <TableHead>{t("table.baseAmount")}</TableHead>
-                <TableHead>{t("table.vatAmount")}</TableHead>
+                <TableHead className="text-right">{t("table.unitPrice")}</TableHead>
+                <TableHead className="text-right">{t("table.baseAmount")}</TableHead>
+                <TableHead className="text-right">{t("table.vatAmount")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -209,9 +220,15 @@ export default async function DocumentDetailsPage({
                     <TableCell>{item.lineNo}</TableCell>
                     <TableCell>{item.description}</TableCell>
                     <TableCell>{item.quantity.toString()}</TableCell>
-                    <TableCell>{item.unitPrice.toString()}</TableCell>
-                    <TableCell>{item.lineBaseAmount.toString()}</TableCell>
-                    <TableCell>{item.lineVatAmount.toString()}</TableCell>
+                    <TableCell className="text-right [font-variant-numeric:tabular-nums]">
+                      {formatDecimal(format, item.unitPrice)}
+                    </TableCell>
+                    <TableCell className="text-right [font-variant-numeric:tabular-nums]">
+                      {formatDecimal(format, item.lineBaseAmount)}
+                    </TableCell>
+                    <TableCell className="text-right [font-variant-numeric:tabular-nums]">
+                      {formatDecimal(format, item.lineVatAmount)}
+                    </TableCell>
                   </TableRow>
                 ))
               )}

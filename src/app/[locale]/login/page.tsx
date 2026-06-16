@@ -45,7 +45,7 @@ export default async function LocalizedLoginPage({
           </div>
         </section>
 
-        <section className="rounded-[30px] border border-[rgba(17,24,39,0.1)] bg-[rgba(255,250,242,0.88)] p-6">
+        <section className="rounded-[30px] border border-[color:var(--line)] bg-[color:var(--panel-strong)] p-6">
           <div style={{ display: "grid", gap: 14, marginBottom: 18 }}>
             <strong style={{ fontSize: "1.15rem" }}>{t("formTitle")}</strong>
             <span className="muted">{t("formDescription")}</span>

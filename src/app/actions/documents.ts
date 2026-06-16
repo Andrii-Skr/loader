@@ -20,7 +20,7 @@ const uploadInvoiceSchema = z.object({
 });
 
 export type UploadInvoiceActionResult = {
-  errorKey: "missingSession" | "missingPdf" | "invalidInput" | null;
+  errorKey: "missingSession" | "missingPdf" | "invalidInput" | "staleSession" | null;
   successCount: number;
   failedCount: number;
   duplicateCount: number;
@@ -55,6 +55,15 @@ export const uploadInvoice = async (formData: FormData): Promise<UploadInvoiceAc
     return emptyUploadResult("missingSession");
   }
 
+  const existingUser = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true },
+  });
+
+  if (!existingUser) {
+    return emptyUploadResult("staleSession");
+  }
+
   const pdfs = formData
     .getAll("pdf")
     .filter((value): value is File => value instanceof File && value.size > 0);
@@ -78,7 +87,7 @@ export const uploadInvoice = async (formData: FormData): Promise<UploadInvoiceAc
       await uploadSingleInvoice({
         pdf,
         extractedText: parsed.data.extractedText?.trim() || null,
-        uploadedById: session.user.id,
+        uploadedById: existingUser.id,
       }),
     );
   }

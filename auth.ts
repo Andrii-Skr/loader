@@ -82,23 +82,20 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         return {};
       }
 
-      if (typeof token.login !== "string" || typeof token.role !== "string") {
-        const existingUser = await prisma.user.findUnique({
-          where: { id: tokenId },
-          select: {
-            login: true,
-            role: true,
-          },
-        });
+      const existingUser = await prisma.user.findUnique({
+        where: { id: tokenId },
+        select: {
+          login: true,
+          role: true,
+        },
+      });
 
-        if (!existingUser) {
-          return {};
-        }
-
-        token.login = existingUser.login;
-        token.role = existingUser.role;
+      if (!existingUser) {
+        return {};
       }
 
+      token.login = existingUser.login;
+      token.role = existingUser.role;
       token.id = tokenId;
       token.sub = String(tokenId);
       return token;
