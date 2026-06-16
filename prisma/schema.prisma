@@ -102,6 +102,7 @@ model Publication {
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   publicationIssues PublicationIssue[]
+  mappings          PublicationMapping[]
 
   @@map("publications")
   @@schema("pdf_loader")
@@ -115,6 +116,7 @@ model IssueNumber {
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   publicationIssues PublicationIssue[]
+  mappings          IssueNumberMapping[]
 
   @@map("issue_numbers")
   @@schema("pdf_loader")
@@ -134,6 +136,58 @@ model PublicationIssue {
   @@index([publicationId])
   @@index([issueNumberId])
   @@map("publication_issues")
+  @@schema("pdf_loader")
+}
+
+model ExternalEditionSource {
+  id                Int                  @id @default(autoincrement())
+  code              String               @unique
+  displayName       String               @map("display_name")
+  schemaName        String               @map("schema_name")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  publicationMappings PublicationMapping[]
+  issueNumberMappings IssueNumberMapping[]
+
+  @@map("external_edition_sources")
+  @@schema("pdf_loader")
+}
+
+model PublicationMapping {
+  id                  Int                  @id @default(autoincrement())
+  publicationId       Int                  @map("publication_id")
+  sourceId            Int                  @map("source_id")
+  externalEditionId   Int                  @map("external_edition_id")
+  externalEditionName String               @map("external_edition_name")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  publication         Publication          @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  source              ExternalEditionSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([publicationId, sourceId, externalEditionId], map: "publication_mappings_pub_source_ext_edition_key")
+  @@index([publicationId])
+  @@index([sourceId])
+  @@index([externalEditionId])
+  @@map("publication_mappings")
+  @@schema("pdf_loader")
+}
+
+model IssueNumberMapping {
+  id                  Int                  @id @default(autoincrement())
+  issueNumberId       Int                  @map("issue_number_id")
+  sourceId            Int                  @map("source_id")
+  externalIssueId     Int                  @map("external_issue_id")
+  externalIssueNumber String               @map("external_issue_number")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  issueNumber         IssueNumber          @relation(fields: [issueNumberId], references: [id], onDelete: Cascade)
+  source              ExternalEditionSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([issueNumberId, sourceId, externalIssueId], map: "issue_number_mappings_issue_source_ext_issue_key")
+  @@index([issueNumberId])
+  @@index([sourceId])
+  @@index([externalIssueId])
+  @@map("issue_number_mappings")
   @@schema("pdf_loader")
 }
 

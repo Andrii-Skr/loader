@@ -18,7 +18,8 @@
     "pageNotFound": "Страница не найдена.",
     "fieldManifest": "Структура полей",
     "currentContour": "Текущий контур",
-    "restrictedRoom": "Закрытая рабочая зона"
+    "restrictedRoom": "Закрытая рабочая зона",
+    "editionMappings": "Соответствия изданий"
   },
   "Login": {
     "titleLine1": "Вход в",
@@ -87,10 +88,22 @@
     "table": {
       "lineNo": "Строка",
       "description": "Описание",
+      "publicationIssue": "Распознанная пара",
+      "mappings": "Соответствия",
       "quantity": "Количество",
       "unitPrice": "Цена",
       "baseAmount": "Сумма без НДС",
       "vatAmount": "НДС"
+    },
+    "mappingStatus": {
+      "unparsed": "не распознано",
+      "unmatched": "не сопоставлено",
+      "fullyMatched": "полностью сопоставлено",
+      "partiallyMatched": "сопоставлено частично",
+      "publicationsCount": "соответствий изданий: {count}",
+      "issueNumbersCount": "соответствий номеров: {count}",
+      "publicationCandidatesCount": "кандидатов по изданиям: {count}",
+      "issueCandidatesCount": "кандидатов по номерам: {count}"
     },
     "status": {
       "PENDING": "в очереди",
@@ -120,6 +133,46 @@
       "pdfHasNoTextLayer": "В PDF нет читаемого текстового слоя. Нужен OCR.",
       "pdfOcrFailed": "OCR fallback завершился ошибкой",
       "pdfOcrUnavailable": "OCR недоступен: не удалось загрузить языковые данные"
+    }
+  },
+  "PublicationMappings": {
+    "eyebrow": "Админ-реестр",
+    "title": "Соответствия изданий и номеров",
+    "description": "Ручное сопоставление распарсенных пар из PDF с позициями IDZ-UKR.",
+    "registryTitle": "Локальные распарсенные пары",
+    "registryTable": {
+      "parsedPublication": "Распарсенное издание",
+      "parsedIssueNumber": "Распарсенный номер",
+      "externalPublication": "Внешнее издание",
+      "externalIssueNumber": "Внешний номер",
+      "actions": "Действия"
+    },
+    "emptyRegistry": "Распарсенных пар пока нет.",
+    "emptyRows": "Сопоставлений пока нет. Добавьте строку вручную.",
+    "addRow": "Добавить строку",
+    "removeRow": "Удалить строку",
+    "removePublication": "Удалить соответствие издания",
+    "removeIssueNumber": "Удалить соответствие номера",
+    "clearSelection": "Очистить",
+    "publicationComboboxPlaceholder": "Выберите издание",
+    "issueNumberComboboxPlaceholder": "Выберите номер",
+    "publicationSearchPlaceholder": "Необязательный текст для поиска изданий",
+    "issueNumberSearchPlaceholder": "Необязательный текст для поиска номеров",
+    "searchPending": "Поиск...",
+    "saveSubmit": "Сохранить соответствия",
+    "savePending": "Сохранение...",
+    "emptyPublicationCandidates": "Кандидаты по изданию не найдены. Попробуйте расширить запрос.",
+    "emptyIssueNumberCandidates": "Кандидаты по номеру не найдены. Попробуйте расширить запрос.",
+    "filters": {
+      "all": "Все",
+      "matched": "Сопоставленные",
+      "unmatched": "Несопоставленные"
+    },
+    "messages": {
+      "missingSession": "Сессия не найдена.",
+      "forbidden": "Управлять соответствиями может только администратор.",
+      "invalidInput": "Некорректный запрос.",
+      "saved": "Соответствия сохранены."
     }
   }
 }

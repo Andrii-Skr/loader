@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   Table,
@@ -65,6 +66,43 @@ const formatDocumentLabel = ({
   const year = documentDate.getUTCFullYear();
 
   return `${documentType} № ${documentNumber} ${onWord} ${day}.${month}.${year}`;
+};
+
+const formatPublicationIssueLabel = (item: {
+  publicationIssue: {
+    publication: { displayName: string; _count: { mappings: number } };
+    issueNumber: { canonicalValue: string; _count: { mappings: number } };
+  } | null;
+}) => {
+  if (!item.publicationIssue) {
+    return null;
+  }
+
+  return `${item.publicationIssue.publication.displayName} · ${item.publicationIssue.issueNumber.canonicalValue}`;
+};
+
+const getMappingStatusKey = (item: {
+  publicationIssue: {
+    publication: { _count: { mappings: number } };
+    issueNumber: { _count: { mappings: number } };
+  } | null;
+}) => {
+  if (!item.publicationIssue) {
+    return "unparsed" as const;
+  }
+
+  const hasPublicationMappings = item.publicationIssue.publication._count.mappings > 0;
+  const hasIssueNumberMappings = item.publicationIssue.issueNumber._count.mappings > 0;
+
+  if (hasPublicationMappings && hasIssueNumberMappings) {
+    return "fullyMatched" as const;
+  }
+
+  if (!hasPublicationMappings && !hasIssueNumberMappings) {
+    return "unmatched" as const;
+  }
+
+  return "partiallyMatched" as const;
 };
 
 export default async function DocumentDetailsPage({
@@ -192,7 +230,14 @@ export default async function DocumentDetailsPage({
               {t("lineItemsDescription")}
             </p>
           </div>
-          <Badge>{common("records", { count: document.lineItems.length })}</Badge>
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge>{common("records", { count: document.lineItems.length })}</Badge>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/dashboard/publication-issue-mappings" locale={locale}>
+                {common("editionMappings")}
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <TableShell>
@@ -201,6 +246,8 @@ export default async function DocumentDetailsPage({
               <TableRow>
                 <TableHead>{t("table.lineNo")}</TableHead>
                 <TableHead>{t("table.description")}</TableHead>
+                <TableHead>{t("table.publicationIssue")}</TableHead>
+                <TableHead>{t("table.mappings")}</TableHead>
                 <TableHead>{t("table.quantity")}</TableHead>
                 <TableHead className="text-right">{t("table.unitPrice")}</TableHead>
                 <TableHead className="text-right">{t("table.baseAmount")}</TableHead>
@@ -210,7 +257,7 @@ export default async function DocumentDetailsPage({
             <TableBody>
               {document.lineItems.length === 0 ? (
                 <TableRow>
-                  <TableCell className="muted" colSpan={6}>
+                  <TableCell className="muted" colSpan={8}>
                     {t("emptyLineItems")}
                   </TableCell>
                 </TableRow>
@@ -219,6 +266,18 @@ export default async function DocumentDetailsPage({
                   <TableRow key={item.id}>
                     <TableCell>{item.lineNo}</TableCell>
                     <TableCell>{item.description}</TableCell>
+                    <TableCell>
+                      {formatPublicationIssueLabel(item) ?? (
+                        <span className="muted">{common("pending")}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {getMappingStatusKey(item) === "unparsed" ? (
+                        <span className="muted">{t("mappingStatus.unparsed")}</span>
+                      ) : (
+                        <strong>{t(`mappingStatus.${getMappingStatusKey(item)}`)}</strong>
+                      )}
+                    </TableCell>
                     <TableCell>{item.quantity.toString()}</TableCell>
                     <TableCell className="text-right [font-variant-numeric:tabular-nums]">
                       {formatDecimal(format, item.unitPrice)}

@@ -18,7 +18,8 @@
     "pageNotFound": "Page not found.",
     "fieldManifest": "Field manifest",
     "currentContour": "Current contour",
-    "restrictedRoom": "Restricted ledger room"
+    "restrictedRoom": "Restricted ledger room",
+    "editionMappings": "Edition mappings"
   },
   "Login": {
     "titleLine1": "Access to",
@@ -87,10 +88,22 @@
     "table": {
       "lineNo": "Row",
       "description": "Description",
+      "publicationIssue": "Parsed pair",
+      "mappings": "Mappings",
       "quantity": "Quantity",
       "unitPrice": "Unit price",
       "baseAmount": "Base amount",
       "vatAmount": "VAT"
+    },
+    "mappingStatus": {
+      "unparsed": "not parsed",
+      "unmatched": "not matched",
+      "fullyMatched": "fully matched",
+      "partiallyMatched": "partially matched",
+      "publicationsCount": "publication matches: {count}",
+      "issueNumbersCount": "issue matches: {count}",
+      "publicationCandidatesCount": "publication candidates: {count}",
+      "issueCandidatesCount": "issue candidates: {count}"
     },
     "status": {
       "PENDING": "queued",
@@ -120,6 +133,46 @@
       "pdfHasNoTextLayer": "PDF does not contain a readable text layer. OCR is required.",
       "pdfOcrFailed": "OCR fallback failed",
       "pdfOcrUnavailable": "OCR is unavailable because language data could not be loaded"
+    }
+  },
+  "PublicationMappings": {
+    "eyebrow": "Admin registry",
+    "title": "Publication issue mappings",
+    "description": "Manual matching between parsed PDF publication issues and IDZ-UKR entries.",
+    "registryTitle": "Local parsed pairs",
+    "registryTable": {
+      "parsedPublication": "Parsed publication",
+      "parsedIssueNumber": "Parsed issue",
+      "externalPublication": "External publication",
+      "externalIssueNumber": "External issue",
+      "actions": "Actions"
+    },
+    "emptyRegistry": "No parsed publication issues are available yet.",
+    "emptyRows": "No mappings yet. Add a row manually.",
+    "addRow": "Add row",
+    "removeRow": "Remove row",
+    "removePublication": "Remove publication mapping",
+    "removeIssueNumber": "Remove issue mapping",
+    "clearSelection": "Clear",
+    "publicationComboboxPlaceholder": "Select publication",
+    "issueNumberComboboxPlaceholder": "Select issue",
+    "publicationSearchPlaceholder": "Optional free-text search for publications",
+    "issueNumberSearchPlaceholder": "Optional free-text search for issue numbers",
+    "searchPending": "Searching...",
+    "saveSubmit": "Save mappings",
+    "savePending": "Saving...",
+    "emptyPublicationCandidates": "No publication candidates found. Try a broader search.",
+    "emptyIssueNumberCandidates": "No issue number candidates found. Try a broader search.",
+    "filters": {
+      "all": "All",
+      "matched": "Matched",
+      "unmatched": "Unmatched"
+    },
+    "messages": {
+      "missingSession": "Session was not found.",
+      "forbidden": "Only admins can manage mappings.",
+      "invalidInput": "Invalid request.",
+      "saved": "Mappings saved."
     }
   }
 }

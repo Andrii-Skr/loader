@@ -169,7 +169,7 @@ export default async function LocalizedDashboardPage({
                       )}
                     </TableCell>
                     <TableCell>{statusLabel[document.extractionStatus]}</TableCell>
-                    <TableCell>{document.lineItems.length}</TableCell>
+                    <TableCell>{document._count.lineItems}</TableCell>
                     <TableCell>
                       <DeleteDocumentButton documentId={document.id} locale={locale} />
                     </TableCell>

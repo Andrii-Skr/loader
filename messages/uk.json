@@ -18,7 +18,8 @@
     "pageNotFound": "Сторінку не знайдено.",
     "fieldManifest": "Структура полів",
     "currentContour": "Поточний контур",
-    "restrictedRoom": "Закрита робоча зона"
+    "restrictedRoom": "Закрита робоча зона",
+    "editionMappings": "Відповідності видань"
   },
   "Login": {
     "titleLine1": "Вхід до",
@@ -87,10 +88,22 @@
     "table": {
       "lineNo": "Рядок",
       "description": "Опис",
+      "publicationIssue": "Розпізнана пара",
+      "mappings": "Відповідності",
       "quantity": "Кількість",
       "unitPrice": "Ціна",
       "baseAmount": "Сума без ПДВ",
       "vatAmount": "ПДВ"
+    },
+    "mappingStatus": {
+      "unparsed": "не розпізнано",
+      "unmatched": "не зіставлено",
+      "fullyMatched": "повністю зіставлено",
+      "partiallyMatched": "зіставлено частково",
+      "publicationsCount": "відповідностей видань: {count}",
+      "issueNumbersCount": "відповідностей номерів: {count}",
+      "publicationCandidatesCount": "кандидатів за виданнями: {count}",
+      "issueCandidatesCount": "кандидатів за номерами: {count}"
     },
     "status": {
       "PENDING": "в черзі",
@@ -120,6 +133,46 @@
       "pdfHasNoTextLayer": "У PDF немає читабельного текстового шару. Потрібен OCR.",
       "pdfOcrFailed": "OCR fallback завершився помилкою",
       "pdfOcrUnavailable": "OCR недоступний: не вдалося завантажити мовні дані"
+    }
+  },
+  "PublicationMappings": {
+    "eyebrow": "Адмін-реєстр",
+    "title": "Відповідності видань і номерів",
+    "description": "Ручне зіставлення розпарсених пар із PDF з позиціями IDZ-UKR.",
+    "registryTitle": "Локальні розпарсені пари",
+    "registryTable": {
+      "parsedPublication": "Розпарсене видання",
+      "parsedIssueNumber": "Розпарсений номер",
+      "externalPublication": "Зовнішнє видання",
+      "externalIssueNumber": "Зовнішній номер",
+      "actions": "Дії"
+    },
+    "emptyRegistry": "Розпарсених пар ще немає.",
+    "emptyRows": "Відповідностей ще немає. Додайте рядок вручну.",
+    "addRow": "Додати рядок",
+    "removeRow": "Видалити рядок",
+    "removePublication": "Видалити відповідність видання",
+    "removeIssueNumber": "Видалити відповідність номера",
+    "clearSelection": "Очистити",
+    "publicationComboboxPlaceholder": "Виберіть видання",
+    "issueNumberComboboxPlaceholder": "Виберіть номер",
+    "publicationSearchPlaceholder": "Необов'язковий текст для пошуку видань",
+    "issueNumberSearchPlaceholder": "Необов'язковий текст для пошуку номерів",
+    "searchPending": "Пошук...",
+    "saveSubmit": "Зберегти відповідності",
+    "savePending": "Збереження...",
+    "emptyPublicationCandidates": "Кандидатів за виданням не знайдено. Спробуйте ширший запит.",
+    "emptyIssueNumberCandidates": "Кандидатів за номером не знайдено. Спробуйте ширший запит.",
+    "filters": {
+      "all": "Усі",
+      "matched": "Зіставлені",
+      "unmatched": "Незіставлені"
+    },
+    "messages": {
+      "missingSession": "Сесію не знайдено.",
+      "forbidden": "Керувати відповідностями може лише адміністратор.",
+      "invalidInput": "Некоректний запит.",
+      "saved": "Відповідності збережено."
     }
   }
 }
