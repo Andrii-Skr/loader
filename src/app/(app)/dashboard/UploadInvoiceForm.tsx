@@ -86,15 +86,19 @@ export function UploadInvoiceForm() {
         const translatedMessage =
           item.errorKey === "parseFailed"
             ? `${t("messages.parseFailedPrefix")}: ${item.detail ?? ""}`
-            : item.errorKey === "pdfReadFailed"
-              ? `${t("messages.pdfReadFailed")}${item.detail ? `: ${item.detail}` : ""}`
-              : item.errorKey === "pdfOcrFailed"
-                ? `${t("messages.pdfOcrFailed")}${item.detail ? `: ${item.detail}` : ""}`
-                : item.errorKey === "pdfOcrUnavailable"
-                  ? `${t("messages.pdfOcrUnavailable")}${item.detail ? `: ${item.detail}` : ""}`
-                  : item.errorKey === "pdfHasNoTextLayer"
-                    ? t("messages.pdfHasNoTextLayer")
-                    : t(`messages.${item.errorKey}`);
+            : item.errorKey === "documentContourUnknown"
+              ? `${t("messages.documentContourUnknown")}${item.detail ? `: ${item.detail}` : ""}`
+              : item.errorKey === "documentContourAmbiguous"
+                ? `${t("messages.documentContourAmbiguous")}${item.detail ? `: ${item.detail}` : ""}`
+                : item.errorKey === "pdfReadFailed"
+                  ? `${t("messages.pdfReadFailed")}${item.detail ? `: ${item.detail}` : ""}`
+                  : item.errorKey === "pdfOcrFailed"
+                    ? `${t("messages.pdfOcrFailed")}${item.detail ? `: ${item.detail}` : ""}`
+                    : item.errorKey === "pdfOcrUnavailable"
+                      ? `${t("messages.pdfOcrUnavailable")}${item.detail ? `: ${item.detail}` : ""}`
+                      : item.errorKey === "pdfHasNoTextLayer"
+                        ? t("messages.pdfHasNoTextLayer")
+                        : t(`messages.${item.errorKey}`);
 
         return `${item.fileName}: ${translatedMessage}`;
       })

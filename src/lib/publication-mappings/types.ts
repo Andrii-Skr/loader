@@ -86,4 +86,4 @@ export type PublicationIssueRegistryItem = PublicationIssueMatchSummary & {
   documentLabels: string[];
 };
 
-export type PublicationIssueRegistryFilter = "all" | "matched" | "unmatched";
+export type PublicationIssueRegistryFilter = "all" | "matched" | "unmatched" | "document-unmatched";

@@ -9,9 +9,14 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { DocumentStatus } from "@/generated/prisma/client";
 import { type AppLocale, routing } from "@/i18n/routing";
+import { getStoredPartyTaxId } from "@/lib/documents/party-tax-id";
 import { saveUploadedFile } from "@/lib/files/save-upload";
 import { PdfExtractionError, extractPdfText } from "@/lib/pdf/extract-pdf-text";
-import { parseVatInvoiceUaV1 } from "@/lib/pdf/parser";
+import {
+  type DocumentContour,
+  InvoiceDetectionError,
+  detectAndParseInvoice,
+} from "@/lib/pdf/parser";
 import { ingestVatInvoice } from "@/lib/pdf/persist";
 import { prisma } from "@/lib/prisma";
 
@@ -28,6 +33,8 @@ export type UploadInvoiceActionResult = {
     fileName: string;
     errorKey:
       | "duplicateDocument"
+      | "documentContourAmbiguous"
+      | "documentContourUnknown"
       | "parseFailed"
       | "pdfReadFailed"
       | "pdfHasNoTextLayer"
@@ -181,38 +188,23 @@ const uploadSingleInvoice = async ({
 }) => {
   const sourceFilePath = await saveUploadedFile(pdf);
   let createdId: number | null = null;
+  let resolvedText: string | null = extractedText;
 
   try {
-    const resolvedText = extractedText || (await extractPdfText(sourceFilePath));
-    const parsedInvoice = parseVatInvoiceUaV1(resolvedText);
-    const documentDate = parseDocumentDate(parsedInvoice.documentDate);
-    const existingSupplier = await prisma.supplier.findUnique({
-      where: { taxId: parsedInvoice.supplier.taxId },
-      select: { id: true },
+    resolvedText = extractedText || (await extractPdfText(sourceFilePath));
+    const detectedInvoice = detectAndParseInvoice(resolvedText);
+    const documentDate = parseDocumentDate(detectedInvoice.parsed.documentDate);
+
+    await assertNotDuplicateDocument({
+      contour: detectedInvoice.contour,
+      documentDate,
+      documentNumber: detectedInvoice.parsed.documentNumber,
+      supplierTaxId: getStoredPartyTaxId({
+        contour: detectedInvoice.contour,
+        taxId: detectedInvoice.parsed.supplier.taxId,
+        kpp: detectedInvoice.parsed.supplier.kpp,
+      }),
     });
-
-    if (existingSupplier) {
-      const duplicateDocument = await prisma.document.findUnique({
-        where: {
-          documentNumber_documentDate_supplierId: {
-            documentNumber: parsedInvoice.documentNumber,
-            documentDate,
-            supplierId: existingSupplier.id,
-          },
-        },
-        select: { id: true },
-      });
-
-      if (duplicateDocument) {
-        await deleteUploadedFile(sourceFilePath);
-
-        return {
-          fileName: pdf.name,
-          errorKey: "duplicateDocument" as const,
-          detail: null,
-        };
-      }
-    }
 
     const created = await prisma.document.create({
       data: {
@@ -226,6 +218,7 @@ const uploadSingleInvoice = async ({
 
     await ingestVatInvoice({
       documentId: createdId,
+      contour: detectedInvoice.contour,
       rawText: resolvedText,
     });
 
@@ -242,6 +235,51 @@ const uploadSingleInvoice = async ({
         fileName: pdf.name,
         errorKey: error.code,
         detail: error.detail ?? null,
+      };
+    }
+
+    if (error instanceof DuplicateDocumentError) {
+      await deleteUploadedFile(sourceFilePath);
+
+      return {
+        fileName: pdf.name,
+        errorKey: "duplicateDocument" as const,
+        detail: null,
+      };
+    }
+
+    if (error instanceof InvoiceDetectionError) {
+      if (createdId === null) {
+        const created = await prisma.document.create({
+          data: {
+            sourceFileName: pdf.name,
+            sourceFilePath,
+            uploadedById,
+            parserVersion: "invoice-detector-v1",
+            extractionStatus: DocumentStatus.NEEDS_REVIEW,
+            reviewRequired: true,
+            rawText: resolvedText,
+            extractedAt: new Date(),
+          },
+        });
+        createdId = created.id;
+      } else {
+        await prisma.document.update({
+          where: { id: createdId },
+          data: {
+            parserVersion: "invoice-detector-v1",
+            extractionStatus: DocumentStatus.NEEDS_REVIEW,
+            reviewRequired: true,
+            rawText: resolvedText,
+            extractedAt: new Date(),
+          },
+        });
+      }
+
+      return {
+        fileName: pdf.name,
+        errorKey: error.code,
+        detail: error.message,
       };
     }
 
@@ -277,6 +315,43 @@ const uploadSingleInvoice = async ({
       errorKey: "parseFailed" as const,
       detail: error instanceof Error ? error.message : null,
     };
+  }
+};
+
+class DuplicateDocumentError extends Error {}
+
+const assertNotDuplicateDocument = async ({
+  contour,
+  documentDate,
+  documentNumber,
+  supplierTaxId,
+}: {
+  contour: DocumentContour;
+  documentDate: Date;
+  documentNumber: string;
+  supplierTaxId: string;
+}) => {
+  const existingSupplier = await prisma.supplier.findUnique({
+    where: { taxId: supplierTaxId },
+    select: { id: true },
+  });
+
+  if (!existingSupplier) {
+    return;
+  }
+
+  const duplicateDocument = await prisma.document.findFirst({
+    where: {
+      documentContour: contour,
+      documentNumber,
+      documentDate,
+      supplierId: existingSupplier.id,
+    },
+    select: { id: true },
+  });
+
+  if (duplicateDocument) {
+    throw new DuplicateDocumentError("Duplicate document");
   }
 };
 

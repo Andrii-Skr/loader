@@ -18,6 +18,10 @@
     "pageNotFound": "Page not found.",
     "fieldManifest": "Field manifest",
     "currentContour": "Current contour",
+    "documentContourUa": "UA contour",
+    "documentContourRu": "RU contour",
+    "documentContourUnknown": "Unknown contour",
+    "parserVersion": "Parser",
     "restrictedRoom": "Restricted ledger room",
     "editionMappings": "Edition mappings"
   },
@@ -44,6 +48,10 @@
     "titleLine2": "",
     "registryTitle": "Document registry",
     "registryDescription": "Latest uploads and their current status.",
+    "actionableSectionTitle": "Require action",
+    "completedSectionTitle": "Completed by month",
+    "completedUndatedMonth": "Without document date",
+    "completedMonthToggle": "Toggle month documents",
     "documentDatePrefix": "dated",
     "emptyRegistry": "Registry is empty. Upload the first PDF.",
     "deleteAction": "Delete",
@@ -126,6 +134,8 @@
       "missingPdf": "Choose a PDF file.",
       "invalidInput": "Invalid form data.",
       "duplicateDocument": "This document is already in the registry.",
+      "documentContourUnknown": "The PDF did not match any supported invoice contour",
+      "documentContourAmbiguous": "The PDF matched multiple invoice contours",
       "savedAndParsed": "Document was saved and parsed.",
       "batchSummary": "Uploaded: {success}. Duplicates: {duplicates}. Errors: {failed}.",
       "parseFailedPrefix": "Parsing error",
@@ -138,7 +148,7 @@
   "PublicationMappings": {
     "eyebrow": "Admin registry",
     "title": "Publication issue mappings",
-    "description": "Manual matching between parsed PDF publication issues and IDZ-UKR entries.",
+    "description": "Manual matching between parsed PDF publication issues and external source entries.",
     "registryTitle": "Local parsed pairs",
     "registryTable": {
       "parsedPublication": "Parsed publication",
@@ -166,7 +176,8 @@
     "filters": {
       "all": "All",
       "matched": "Matched",
-      "unmatched": "Unmatched"
+      "unmatched": "Unmatched",
+      "document-unmatched": "Unmatched in document"
     },
     "messages": {
       "missingSession": "Session was not found.",

@@ -1,6 +1,7 @@
 import { cache } from "react";
 
 import { Prisma } from "@/generated/prisma/client";
+import { getDocumentMappingStatus } from "@/lib/documents/mapping-status";
 import { prisma } from "@/lib/prisma";
 
 const getDocumentDetailsLineItemsArgs = () =>
@@ -36,12 +37,38 @@ const getDocumentDetailsLineItemsArgs = () =>
 
 export const getDashboardDocuments = cache(async () => {
   try {
-    return await prisma.document.findMany({
+    const documents = await prisma.document.findMany({
       orderBy: { createdAt: "desc" },
       take: 12,
       include: {
         supplier: true,
         recipient: true,
+        lineItems: {
+          select: {
+            publicationIssue: {
+              select: {
+                publication: {
+                  select: {
+                    _count: {
+                      select: {
+                        mappings: true,
+                      },
+                    },
+                  },
+                },
+                issueNumber: {
+                  select: {
+                    _count: {
+                      select: {
+                        mappings: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         _count: {
           select: {
             lineItems: true,
@@ -56,6 +83,11 @@ export const getDashboardDocuments = cache(async () => {
         },
       },
     });
+
+    return documents.map((document) => ({
+      ...document,
+      mappingStatus: getDocumentMappingStatus(document.lineItems),
+    }));
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") {
       return [];

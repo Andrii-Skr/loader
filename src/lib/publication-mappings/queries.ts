@@ -11,7 +11,18 @@ import type {
 
 const buildRegistryWhere = (
   filter: PublicationIssueRegistryFilter,
+  documentId?: number,
 ): Prisma.PublicationIssueWhereInput => {
+  const documentScopedWhere: Prisma.PublicationIssueWhereInput = documentId
+    ? {
+        lineItems: {
+          some: {
+            documentId,
+          },
+        },
+      }
+    : {};
+
   if (filter === "matched") {
     return {
       publication: { is: { mappings: { some: {} } } },
@@ -21,6 +32,16 @@ const buildRegistryWhere = (
 
   if (filter === "unmatched") {
     return {
+      OR: [
+        { publication: { is: { mappings: { none: {} } } } },
+        { issueNumber: { is: { mappings: { none: {} } } } },
+      ],
+    };
+  }
+
+  if (filter === "document-unmatched") {
+    return {
+      ...documentScopedWhere,
       OR: [
         { publication: { is: { mappings: { none: {} } } } },
         { issueNumber: { is: { mappings: { none: {} } } } },
@@ -83,9 +104,12 @@ const mapSummary = (publicationIssue: {
 });
 
 export const getPublicationIssueRegistry = cache(
-  async (filter: PublicationIssueRegistryFilter): Promise<PublicationIssueRegistryItem[]> => {
+  async (
+    filter: PublicationIssueRegistryFilter,
+    documentId?: number,
+  ): Promise<PublicationIssueRegistryItem[]> => {
     const items = await prisma.publicationIssue.findMany({
-      where: buildRegistryWhere(filter),
+      where: buildRegistryWhere(filter, documentId),
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       include: {
         publication: {

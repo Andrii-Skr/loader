@@ -2,6 +2,8 @@ import { getFormatter, getTranslations, setRequestLocale } from "next-intl/serve
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
+import { auth } from "@/auth";
+import { MappingStatusIcon } from "@/components/documents/mapping-status-icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Link } from "@/i18n/navigation";
 import { type AppLocale, routing } from "@/i18n/routing";
+import { getLineItemMappingStatusKey } from "@/lib/documents/mapping-status";
 import { getDashboardDocumentById } from "@/lib/documents/queries";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +26,8 @@ export const dynamic = "force-dynamic";
 const formatCurrency = (
   formatter: Awaited<ReturnType<typeof getFormatter>>,
   value: number | string | null,
+  currency: string | null,
+  contour: string | null,
   fallback: string,
 ) => {
   if (value === null) {
@@ -30,7 +35,9 @@ const formatCurrency = (
   }
 
   const amount = typeof value === "number" ? value : Number(value);
-  return formatter.number(amount, { style: "currency", currency: "UAH" });
+  const resolvedCurrency = contour === "RU" ? "RUB" : (currency ?? "UAH");
+
+  return formatter.number(amount, { style: "currency", currency: resolvedCurrency });
 };
 
 const formatDecimal = (
@@ -81,30 +88,6 @@ const formatPublicationIssueLabel = (item: {
   return `${item.publicationIssue.publication.displayName} · ${item.publicationIssue.issueNumber.canonicalValue}`;
 };
 
-const getMappingStatusKey = (item: {
-  publicationIssue: {
-    publication: { _count: { mappings: number } };
-    issueNumber: { _count: { mappings: number } };
-  } | null;
-}) => {
-  if (!item.publicationIssue) {
-    return "unparsed" as const;
-  }
-
-  const hasPublicationMappings = item.publicationIssue.publication._count.mappings > 0;
-  const hasIssueNumberMappings = item.publicationIssue.issueNumber._count.mappings > 0;
-
-  if (hasPublicationMappings && hasIssueNumberMappings) {
-    return "fullyMatched" as const;
-  }
-
-  if (!hasPublicationMappings && !hasIssueNumberMappings) {
-    return "unmatched" as const;
-  }
-
-  return "partiallyMatched" as const;
-};
-
 export default async function DocumentDetailsPage({
   params,
 }: {
@@ -122,12 +105,14 @@ export default async function DocumentDetailsPage({
     notFound();
   }
 
-  const [document, t, common, format] = await Promise.all([
+  const [session, document, t, common, format] = await Promise.all([
+    auth(),
     getDashboardDocumentById(parsedDocumentId.data),
     getTranslations({ locale, namespace: "DocumentDetails" }),
     getTranslations({ locale, namespace: "Common" }),
     getFormatter({ locale }),
   ]);
+  const canManageMappings = session?.user?.role === "ADMIN";
 
   if (!document) {
     notFound();
@@ -159,9 +144,11 @@ export default async function DocumentDetailsPage({
           </div>
 
           <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
-            <Link href="/dashboard" locale={locale}>
-              {common("backToCabinet")}
-            </Link>
+            <Button asChild variant="outline">
+              <Link href="/dashboard" locale={locale}>
+                {common("backToCabinet")}
+              </Link>
+            </Button>
           </div>
         </div>
 
@@ -202,16 +189,30 @@ export default async function DocumentDetailsPage({
                 {formatCurrency(
                   format,
                   document.totalAmount?.toString() ?? null,
+                  document.currency,
+                  document.documentContour,
                   common("pending"),
                 )}
               </span>
               <span>{t("vat")}:</span>
               <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                {formatCurrency(format, document.vatAmount?.toString() ?? null, common("pending"))}
+                {formatCurrency(
+                  format,
+                  document.vatAmount?.toString() ?? null,
+                  document.currency,
+                  document.documentContour,
+                  common("pending"),
+                )}
               </span>
               <span>{t("base")}:</span>
               <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                {formatCurrency(format, document.baseAmount?.toString() ?? null, common("pending"))}
+                {formatCurrency(
+                  format,
+                  document.baseAmount?.toString() ?? null,
+                  document.currency,
+                  document.documentContour,
+                  common("pending"),
+                )}
               </span>
             </div>
           </Card>
@@ -232,11 +233,22 @@ export default async function DocumentDetailsPage({
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Badge>{common("records", { count: document.lineItems.length })}</Badge>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/dashboard/publication-issue-mappings" locale={locale}>
-                {common("editionMappings")}
-              </Link>
-            </Button>
+            {canManageMappings ? (
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  href={{
+                    pathname: "/dashboard/publication-issue-mappings",
+                    query: {
+                      filter: "document-unmatched",
+                      documentId: document.id,
+                    },
+                  }}
+                  locale={locale}
+                >
+                  {common("editionMappings")}
+                </Link>
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -262,34 +274,37 @@ export default async function DocumentDetailsPage({
                   </TableCell>
                 </TableRow>
               ) : (
-                document.lineItems.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.lineNo}</TableCell>
-                    <TableCell>{item.description}</TableCell>
-                    <TableCell>
-                      {formatPublicationIssueLabel(item) ?? (
-                        <span className="muted">{common("pending")}</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {getMappingStatusKey(item) === "unparsed" ? (
-                        <span className="muted">{t("mappingStatus.unparsed")}</span>
-                      ) : (
-                        <strong>{t(`mappingStatus.${getMappingStatusKey(item)}`)}</strong>
-                      )}
-                    </TableCell>
-                    <TableCell>{item.quantity.toString()}</TableCell>
-                    <TableCell className="text-right [font-variant-numeric:tabular-nums]">
-                      {formatDecimal(format, item.unitPrice)}
-                    </TableCell>
-                    <TableCell className="text-right [font-variant-numeric:tabular-nums]">
-                      {formatDecimal(format, item.lineBaseAmount)}
-                    </TableCell>
-                    <TableCell className="text-right [font-variant-numeric:tabular-nums]">
-                      {formatDecimal(format, item.lineVatAmount)}
-                    </TableCell>
-                  </TableRow>
-                ))
+                document.lineItems.map((item) => {
+                  const mappingStatus = getLineItemMappingStatusKey(item);
+
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.lineNo}</TableCell>
+                      <TableCell>{item.description}</TableCell>
+                      <TableCell>
+                        {formatPublicationIssueLabel(item) ?? (
+                          <span className="muted">{common("pending")}</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <MappingStatusIcon
+                          label={t(`mappingStatus.${mappingStatus}`)}
+                          status={mappingStatus}
+                        />
+                      </TableCell>
+                      <TableCell>{item.quantity.toString()}</TableCell>
+                      <TableCell className="text-right [font-variant-numeric:tabular-nums]">
+                        {formatDecimal(format, item.unitPrice)}
+                      </TableCell>
+                      <TableCell className="text-right [font-variant-numeric:tabular-nums]">
+                        {formatDecimal(format, item.lineBaseAmount)}
+                      </TableCell>
+                      <TableCell className="text-right [font-variant-numeric:tabular-nums]">
+                        {formatDecimal(format, item.lineVatAmount)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>

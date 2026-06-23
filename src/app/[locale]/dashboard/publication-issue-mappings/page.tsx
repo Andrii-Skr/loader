@@ -18,10 +18,11 @@ import type { PublicationIssueRegistryFilter } from "@/lib/publication-mappings/
 import { PublicationIssueMappingsTableClient } from "./PublicationIssueMappingsTableClient";
 
 const searchParamsSchema = z.object({
-  filter: z.enum(["all", "matched", "unmatched"]).optional(),
+  filter: z.enum(["all", "matched", "unmatched", "document-unmatched"]).optional(),
+  documentId: z.coerce.number().int().positive().optional(),
 });
 
-const filterValues: PublicationIssueRegistryFilter[] = ["all", "matched", "unmatched"];
+const baseFilterValues: PublicationIssueRegistryFilter[] = ["all", "matched", "unmatched"];
 
 export default async function PublicationIssueMappingsPage({
   params,
@@ -48,9 +49,13 @@ export default async function PublicationIssueMappingsPage({
 
   const parsedSearchParams = searchParamsSchema.safeParse(await searchParams);
   const filter = parsedSearchParams.success ? (parsedSearchParams.data.filter ?? "all") : "all";
+  const documentId = parsedSearchParams.success ? parsedSearchParams.data.documentId : undefined;
+  const filterValues = documentId
+    ? [...baseFilterValues, "document-unmatched" as const]
+    : baseFilterValues;
 
   const [registry, t, common] = await Promise.all([
-    getPublicationIssueRegistry(filter),
+    getPublicationIssueRegistry(filter, documentId),
     getTranslations({ locale, namespace: "PublicationMappings" }),
     getTranslations({ locale, namespace: "Common" }),
   ]);
@@ -110,9 +115,14 @@ export default async function PublicationIssueMappingsPage({
               <Link
                 href={{
                   pathname: "/dashboard/publication-issue-mappings",
-                  query: {
-                    filter: filterValue,
-                  },
+                  query: documentId
+                    ? {
+                        filter: filterValue,
+                        documentId,
+                      }
+                    : {
+                        filter: filterValue,
+                      },
                 }}
                 locale={locale}
               >

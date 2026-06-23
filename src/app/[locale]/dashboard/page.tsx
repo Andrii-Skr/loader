@@ -1,28 +1,24 @@
 import { getFormatter, getTranslations, setRequestLocale } from "next-intl/server";
 
-import { DeleteDocumentButton } from "@/app/(app)/dashboard/DeleteDocumentButton";
 import { UploadInvoiceForm } from "@/app/(app)/dashboard/UploadInvoiceForm";
+import { DocumentRegistry } from "@/app/[locale]/dashboard/DocumentRegistry";
+import { auth } from "@/auth";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableShell,
-} from "@/components/ui/table";
-import type { DocumentStatus } from "@/generated/prisma/client";
 import { Link } from "@/i18n/navigation";
 import { type AppLocale, routing } from "@/i18n/routing";
+import type { MappingStatusKey } from "@/lib/documents/mapping-status";
 import { getDashboardDocuments } from "@/lib/documents/queries";
+import { splitRegistryDocuments } from "@/lib/documents/registry";
 
 export const dynamic = "force-dynamic";
 
 const formatCurrency = (
   formatter: Awaited<ReturnType<typeof getFormatter>>,
   value: number | string | null,
+  currency: string | null,
+  contour: string | null,
   fallback: string,
 ) => {
   if (value === null) {
@@ -30,7 +26,9 @@ const formatCurrency = (
   }
 
   const amount = typeof value === "number" ? value : Number(value);
-  return formatter.number(amount, { style: "currency", currency: "UAH" });
+  const resolvedCurrency = contour === "RU" ? "RUB" : (currency ?? "UAH");
+
+  return formatter.number(amount, { style: "currency", currency: resolvedCurrency });
 };
 
 const formatDocumentLabel = ({
@@ -69,16 +67,51 @@ export default async function LocalizedDashboardPage({
   setRequestLocale(locale);
 
   const documents = await getDashboardDocuments();
-  const t = await getTranslations({ locale, namespace: "Dashboard" });
-  const common = await getTranslations({ locale, namespace: "Common" });
-  const format = await getFormatter({ locale });
+  const [session, t, documentDetails, common, format] = await Promise.all([
+    auth(),
+    getTranslations({ locale, namespace: "Dashboard" }),
+    getTranslations({ locale, namespace: "DocumentDetails" }),
+    getTranslations({ locale, namespace: "Common" }),
+    getFormatter({ locale }),
+  ]);
+  const canManageMappings = session?.user?.role === "ADMIN";
 
-  const statusLabel: Record<DocumentStatus, string> = {
-    PENDING: t("status.PENDING"),
-    PROCESSED: t("status.PROCESSED"),
-    NEEDS_REVIEW: t("status.NEEDS_REVIEW"),
-    FAILED: t("status.FAILED"),
+  const mappingStatusLabels: Record<MappingStatusKey, string> = {
+    unparsed: documentDetails("mappingStatus.unparsed"),
+    unmatched: documentDetails("mappingStatus.unmatched"),
+    partiallyMatched: documentDetails("mappingStatus.partiallyMatched"),
+    fullyMatched: documentDetails("mappingStatus.fullyMatched"),
   };
+
+  const serializedDocuments = documents.map((document) => ({
+    id: document.id,
+    label: formatDocumentLabel({
+      documentType: document.documentType,
+      documentNumber: document.documentNumber,
+      documentDate: document.documentDate,
+      fallback: document.sourceFileName,
+      onWord: t("documentDatePrefix"),
+    }),
+    supplierTaxId: document.supplier?.taxId ?? null,
+    supplierName: document.supplier?.name ?? null,
+    recipientName: document.recipient?.name ?? null,
+    totalAmount: formatCurrency(
+      format,
+      document.totalAmount?.toString() ?? null,
+      document.currency,
+      document.documentContour,
+      common("pending"),
+    ),
+    mappingStatus: document.mappingStatus,
+    lineItemsCount: document._count.lineItems,
+    documentDate: document.documentDate,
+  }));
+
+  const { actionableDocuments, completedGroups } = splitRegistryDocuments({
+    documents: serializedDocuments,
+    locale,
+    undatedTitle: t("completedUndatedMonth"),
+  });
 
   return (
     <div style={{ display: "grid", gap: 24 }}>
@@ -119,66 +152,44 @@ export default async function LocalizedDashboardPage({
               {t("registryDescription")}
             </p>
           </div>
-          <Badge>{common("records", { count: documents.length })}</Badge>
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge>{common("records", { count: documents.length })}</Badge>
+            {canManageMappings ? (
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  href={{
+                    pathname: "/dashboard/publication-issue-mappings",
+                    query: { filter: "unmatched" },
+                  }}
+                  locale={locale}
+                >
+                  {common("editionMappings")}
+                </Link>
+              </Button>
+            ) : null}
+          </div>
         </div>
 
-        <TableShell>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("table.document")}</TableHead>
-                <TableHead>{t("table.supplier")}</TableHead>
-                <TableHead>{t("table.recipient")}</TableHead>
-                <TableHead>{t("table.amount")}</TableHead>
-                <TableHead>{t("table.status")}</TableHead>
-                <TableHead>{t("table.rows")}</TableHead>
-                <TableHead>{t("table.actions")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {documents.length === 0 ? (
-                <TableRow>
-                  <TableCell className="muted" colSpan={7}>
-                    {t("emptyRegistry")}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                documents.map((document) => (
-                  <TableRow key={document.id}>
-                    <TableCell>
-                      <strong>
-                        <Link href={`/dashboard/documents/${document.id}`} locale={locale}>
-                          {formatDocumentLabel({
-                            documentType: document.documentType,
-                            documentNumber: document.documentNumber,
-                            documentDate: document.documentDate,
-                            fallback: document.sourceFileName,
-                            onWord: t("documentDatePrefix"),
-                          })}
-                        </Link>
-                      </strong>
-                      <div className="muted">{document.supplier?.taxId ?? common("pending")}</div>
-                    </TableCell>
-                    <TableCell>{document.supplier?.name ?? common("pending")}</TableCell>
-                    <TableCell>{document.recipient?.name ?? common("pending")}</TableCell>
-                    <TableCell>
-                      {formatCurrency(
-                        format,
-                        document.totalAmount?.toString() ?? null,
-                        common("pending"),
-                      )}
-                    </TableCell>
-                    <TableCell>{statusLabel[document.extractionStatus]}</TableCell>
-                    <TableCell>{document._count.lineItems}</TableCell>
-                    <TableCell>
-                      <DeleteDocumentButton documentId={document.id} locale={locale} />
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableShell>
+        <DocumentRegistry
+          actionableDocuments={actionableDocuments}
+          actionableSectionTitle={t("actionableSectionTitle")}
+          completedGroups={completedGroups}
+          completedMonthToggleLabel={t("completedMonthToggle")}
+          completedSectionTitle={t("completedSectionTitle")}
+          emptyRegistryLabel={t("emptyRegistry")}
+          locale={locale}
+          mappingStatusLabels={mappingStatusLabels}
+          pendingLabel={common("pending")}
+          tableLabels={{
+            document: t("table.document"),
+            supplier: t("table.supplier"),
+            recipient: t("table.recipient"),
+            amount: t("table.amount"),
+            status: t("table.status"),
+            rows: t("table.rows"),
+            actions: t("table.actions"),
+          }}
+        />
       </Card>
     </div>
   );

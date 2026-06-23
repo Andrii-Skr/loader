@@ -12,6 +12,7 @@ model Supplier {
   id          Int        @id @default(autoincrement())
   name        String
   taxId       String     @unique @map("tax_id")
+  kpp         String?    @map("kpp")
   documents   Document[]
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
@@ -24,6 +25,7 @@ model Recipient {
   id          Int        @id @default(autoincrement())
   name        String
   taxId       String     @unique @map("tax_id")
+  kpp         String?    @map("kpp")
   documents   Document[]
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
@@ -36,6 +38,7 @@ model Document {
   id                 Int                @id @default(autoincrement())
   sourceFileName     String             @map("source_file_name")
   sourceFilePath     String?            @map("source_file_path")
+  documentContour    DocumentContour?   @map("document_contour")
   parserVersion      String             @default("vat-invoice-ua-v1") @map("parser_version")
   documentType       String?            @map("document_type")
   documentNumber     String?            @map("document_number")
@@ -58,11 +61,12 @@ model Document {
   uploadedBy         User?              @relation(fields: [uploadedById], references: [id])
   lineItems          SpecialDocument[]
 
-  @@unique([documentNumber, documentDate, supplierId], map: "documents_number_date_supplier_key")
+  @@unique([documentContour, documentNumber, documentDate, supplierId], map: "documents_contour_number_date_supplier_key")
   @@index([supplierId])
   @@index([recipientId])
   @@index([uploadedById])
   @@index([documentDate])
+  @@index([documentContour])
   @@map("documents")
   @@schema("pdf_loader")
 }
@@ -73,7 +77,9 @@ model SpecialDocument {
   lineNo             Int               @map("line_no")
   description        String
   publicationIssueId Int?              @map("publication_issue_id")
+  sourceRowCode      String?           @map("source_row_code")
   serviceCode        String?           @map("service_code")
+  itemTypeCode       String?           @map("item_type_code")
   unitName           String?           @map("unit_name")
   unitCode           String?           @map("unit_code")
   quantity           Decimal           @db.Decimal(15, 3)
@@ -82,6 +88,11 @@ model SpecialDocument {
   benefitCode        String?           @map("benefit_code")
   lineBaseAmount     Decimal           @db.Decimal(15, 2) @map("line_base_amount")
   lineVatAmount      Decimal           @db.Decimal(15, 2) @map("line_vat_amount")
+  exciseAmount       Decimal?          @db.Decimal(15, 2) @map("excise_amount")
+  lineTotalAmount    Decimal?          @db.Decimal(15, 2) @map("line_total_amount")
+  countryCode        String?           @map("country_code")
+  countryName        String?           @map("country_name")
+  customsDeclarationNumber String?     @map("customs_declaration_number")
   rawRowText         String?           @db.Text @map("raw_row_text")
   createdAt          DateTime          @default(now()) @map("created_at")
   updatedAt          DateTime          @updatedAt @map("updated_at")
@@ -196,6 +207,13 @@ enum DocumentStatus {
   PROCESSED
   NEEDS_REVIEW
   FAILED
+
+  @@schema("pdf_loader")
+}
+
+enum DocumentContour {
+  UA
+  RU
 
   @@schema("pdf_loader")
 }

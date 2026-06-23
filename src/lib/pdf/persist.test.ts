@@ -3,8 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentStatus } from "@/generated/prisma/client";
 
 const parserMocks = vi.hoisted(() => ({
-  parseVatInvoiceUaV1: vi.fn(),
+  parse: vi.fn(),
   parsePublicationIssueDescription: vi.fn(),
+  getInvoiceParserByContour: vi.fn(),
 }));
 
 const prismaState = vi.hoisted(() => ({
@@ -16,8 +17,7 @@ vi.mock("@/lib/pdf/parser", async () => {
 
   return {
     ...actual,
-    parseVatInvoiceUaV1: parserMocks.parseVatInvoiceUaV1,
-    parsePublicationIssueDescription: parserMocks.parsePublicationIssueDescription,
+    getInvoiceParserByContour: parserMocks.getInvoiceParserByContour,
   };
 });
 
@@ -33,13 +33,21 @@ import { ingestVatInvoice } from "@/lib/pdf/persist";
 
 describe("ingestVatInvoice", () => {
   beforeEach(() => {
-    parserMocks.parseVatInvoiceUaV1.mockReset();
+    parserMocks.parse.mockReset();
     parserMocks.parsePublicationIssueDescription.mockReset();
+    parserMocks.getInvoiceParserByContour.mockReset();
     prismaState.tx = createTransactionMock();
+    parserMocks.getInvoiceParserByContour.mockReturnValue({
+      contour: "UA",
+      parserVersion: "vat-invoice-ua-v1",
+      lookupLocale: "uk-UA",
+      parse: parserMocks.parse,
+      parsePublicationIssueDescription: parserMocks.parsePublicationIssueDescription,
+    });
   });
 
   it("creates publication, issue number and publication issue for parsed line items", async () => {
-    parserMocks.parseVatInvoiceUaV1.mockReturnValue(
+    parserMocks.parse.mockReturnValue(
       createParsedInvoice({
         lineItems: [createLineItem('ж-л "Філворди.Спецвипуск" №4/саморобка/')],
       }),
@@ -52,6 +60,7 @@ describe("ingestVatInvoice", () => {
 
     const document = await ingestVatInvoice({
       documentId: 101,
+      contour: "UA",
       rawText: "raw text",
     });
 
@@ -64,10 +73,12 @@ describe("ingestVatInvoice", () => {
     expect(createInput?.publicationIssueId).toBe(1);
     expect(document.reviewRequired).toBe(false);
     expect(document.extractionStatus).toBe(DocumentStatus.PROCESSED);
+    expect(document.documentContour).toBe("UA");
+    expect(document.parserVersion).toBe("vat-invoice-ua-v1");
   });
 
   it("reuses the same normalized publication issue across uploads", async () => {
-    parserMocks.parseVatInvoiceUaV1.mockReturnValue(
+    parserMocks.parse.mockReturnValue(
       createParsedInvoice({
         lineItems: [createLineItem('ж-л "Філворди.Спецвипуск" №4/саморобка/')],
       }),
@@ -80,6 +91,7 @@ describe("ingestVatInvoice", () => {
 
     await ingestVatInvoice({
       documentId: 201,
+      contour: "UA",
       rawText: "first raw text",
     });
 
@@ -87,6 +99,7 @@ describe("ingestVatInvoice", () => {
 
     await ingestVatInvoice({
       documentId: 202,
+      contour: "UA",
       rawText: "second raw text",
     });
 
@@ -99,7 +112,7 @@ describe("ingestVatInvoice", () => {
   });
 
   it("deduplicates raw and canonical issue variants into one issue number", async () => {
-    parserMocks.parseVatInvoiceUaV1.mockReturnValue(
+    parserMocks.parse.mockReturnValue(
       createParsedInvoice({
         lineItems: [createLineItem('ж-л "Філворди" №4')],
       }),
@@ -118,11 +131,13 @@ describe("ingestVatInvoice", () => {
 
     await ingestVatInvoice({
       documentId: 211,
+      contour: "UA",
       rawText: "first raw text",
     });
 
     await ingestVatInvoice({
       documentId: 212,
+      contour: "UA",
       rawText: "second raw text",
     });
 
@@ -137,7 +152,7 @@ describe("ingestVatInvoice", () => {
   });
 
   it("marks document for review when publication issue parsing fails", async () => {
-    parserMocks.parseVatInvoiceUaV1.mockReturnValue(
+    parserMocks.parse.mockReturnValue(
       createParsedInvoice({
         lineItems: [createLineItem("Послуги з пакування")],
       }),
@@ -146,6 +161,7 @@ describe("ingestVatInvoice", () => {
 
     const document = await ingestVatInvoice({
       documentId: 301,
+      contour: "UA",
       rawText: "raw text",
     });
 
@@ -158,7 +174,7 @@ describe("ingestVatInvoice", () => {
   });
 
   it("keeps parsed publication issues but still marks review when only some rows fail", async () => {
-    parserMocks.parseVatInvoiceUaV1.mockReturnValue(
+    parserMocks.parse.mockReturnValue(
       createParsedInvoice({
         lineItems: [
           createLineItem('ж-л "Філворди" №4'),
@@ -179,6 +195,7 @@ describe("ingestVatInvoice", () => {
 
     const document = await ingestVatInvoice({
       documentId: 401,
+      contour: "UA",
       rawText: "raw text",
     });
 
@@ -190,24 +207,77 @@ describe("ingestVatInvoice", () => {
     expect(document.reviewRequired).toBe(true);
     expect(document.extractionStatus).toBe(DocumentStatus.NEEDS_REVIEW);
   });
+
+  it("uses contour-specific parser metadata for RU uploads", async () => {
+    parserMocks.getInvoiceParserByContour.mockReturnValue({
+      contour: "RU",
+      parserVersion: "vat-invoice-ru-v1",
+      lookupLocale: "ru-RU",
+      parse: parserMocks.parse,
+      parsePublicationIssueDescription: parserMocks.parsePublicationIssueDescription,
+    });
+    parserMocks.parse.mockReturnValue(
+      createParsedInvoice({
+        documentType: "Счет-фактура",
+        supplierKpp: "770101001",
+        recipientKpp: "770201001",
+        lineItems: [createLineItem('журнал "Сканворды" №4')],
+      }),
+    );
+    parserMocks.parsePublicationIssueDescription.mockReturnValue({
+      publicationName: "Сканворды",
+      rawIssueNumber: "4",
+      canonicalIssueNumber: "04-26",
+    });
+
+    const document = await ingestVatInvoice({
+      documentId: 501,
+      contour: "RU",
+      rawText: "raw text",
+    });
+
+    expect(prismaState.tx.supplier.upsert).toHaveBeenCalledWith({
+      where: { taxId: "123456789012/770101001" },
+      update: { name: 'ТОВ "Постачальник"', kpp: "770101001" },
+      create: {
+        name: 'ТОВ "Постачальник"',
+        taxId: "123456789012/770101001",
+        kpp: "770101001",
+      },
+    });
+    expect(document.documentContour).toBe("RU");
+    expect(document.parserVersion).toBe("vat-invoice-ru-v1");
+  });
 });
 
 function createParsedInvoice({
+  documentType = "Податкова накладна",
+  supplierTaxId = "123456789012",
+  supplierKpp = null,
+  recipientTaxId = "210987654321",
+  recipientKpp = null,
   lineItems,
 }: {
+  documentType?: string;
+  supplierTaxId?: string;
+  supplierKpp?: string | null;
+  recipientTaxId?: string;
+  recipientKpp?: string | null;
   lineItems: Array<ReturnType<typeof createLineItem>>;
 }) {
   return {
-    documentType: "Податкова накладна",
+    documentType,
     documentNumber: "18",
     documentDate: "10.04.2026",
     supplier: {
       name: 'ТОВ "Постачальник"',
-      taxId: "123456789012",
+      taxId: supplierTaxId,
+      kpp: supplierKpp,
     },
     recipient: {
       name: 'ТОВ "Отримувач"',
-      taxId: "210987654321",
+      taxId: recipientTaxId,
+      kpp: recipientKpp,
     },
     totalAmount: "100.00",
     vatAmount: "20.00",
@@ -222,7 +292,9 @@ function createLineItem(description: string) {
   return {
     lineNo: 1,
     description,
+    sourceRowCode: null,
     serviceCode: "18.12",
+    itemTypeCode: null,
     unitName: "шт",
     unitCode: "2009",
     quantity: "1",
@@ -231,6 +303,11 @@ function createLineItem(description: string) {
     benefitCode: null,
     lineBaseAmount: "10.00",
     lineVatAmount: "2.00",
+    exciseAmount: null,
+    lineTotalAmount: null,
+    countryCode: null,
+    countryName: null,
+    customsDeclarationNumber: null,
     rawRowText: description,
   };
 }
@@ -255,16 +332,20 @@ function createTransactionMock() {
   return {
     store,
     supplier: {
-      upsert: vi.fn(async ({ create }: { create: { name: string; taxId: string } }) => ({
-        id: 1,
-        ...create,
-      })),
+      upsert: vi.fn(
+        async ({ create }: { create: { name: string; taxId: string; kpp: string | null } }) => ({
+          id: 1,
+          ...create,
+        }),
+      ),
     },
     recipient: {
-      upsert: vi.fn(async ({ create }: { create: { name: string; taxId: string } }) => ({
-        id: 2,
-        ...create,
-      })),
+      upsert: vi.fn(
+        async ({ create }: { create: { name: string; taxId: string; kpp: string | null } }) => ({
+          id: 2,
+          ...create,
+        }),
+      ),
     },
     specialDocument: {
       deleteMany: vi.fn(async () => ({ count: 0 })),

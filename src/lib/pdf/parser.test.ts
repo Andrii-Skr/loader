@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   canonicalizeIssueNumber,
+  detectAndParseInvoice,
+  detectVatInvoiceRuV1,
+  detectVatInvoiceUaV1,
   parsePublicationIssueDescription,
+  parsePublicationIssueDescriptionRuV1,
+  parseVatInvoiceRuV1,
   parseVatInvoiceUaV1,
 } from "@/lib/pdf/parser";
 
@@ -15,6 +20,200 @@ const sampleText = `Зведена податкова накладна
 Розділ Б
 1 2 3.1 3.2.1 3.2.2 3.3 4 5 6 7 8 9 10 11 1 Послуга друку газети "Філворди. Спецвипуск" (р) №4-26 (саморобки) 18.12 шт 2009 3150 5,00 20 15 750,00 3 150,00 2 Послуга друку газети "Філворди. Спецвипуск" (р) №5-26 (саморобки) 18.12 шт 2009 3150 5,00 20 15 750,00 3 150,00
 Суми податку на додану вартість, нараховані (сплачені)`;
+
+const sampleRuText = `Универсальный передаточный документ Статус: 1
+1 – счет-фактура и передаточный документ (акт)
+2 – передаточный документ (акт)
+Счет-фактура № 035 от 24 апреля 2026 г.
+Исправление № --- от ---
+Продавец Общество с ограниченной ответственностью "Кубаньпечать" (2)
+Адрес 350010, Краснодарский край, г.Краснодар, ул.Зиповская (2а)
+ИНН/КПП продавца 2310044604/231001001 (2б)
+Документ об отгрузке: УПД, № 035 от 24.04.2026 (5а)
+Покупатель ООО Издательский дом "Семейная пресса" (6)
+Адрес Донецкая Народная Республика, г. Донецк г.о. Донецк, ул. Батищева, д. 10А (6а)
+ИНН/КПП покупателя 9309026071/930901001 (6б)
+Код товара/ работ, услуг
+№ п/п
+Наименование товара (описание выполненных работ, оказанных услуг), имущественного права
+Код вида товара
+Единица измерения
+Количество (объем)
+Цена (тариф) за единицу измерения
+Стоимость товаров (работ,услуг), имущественных прав без налога - всего
+В том числе сумма акциза
+Налого-вая ставка
+Сумма налога, предъявляемая покупателю
+Стоимость товаров (работ, услуг), имущественных прав с налогом - всего
+Страна происхож-дения товара
+Регистрационный номер декларации на товары или регистрационный номер партии товара, подлежащего прослеживаемости
+код условное обозначе-ние (нацио-нальное)
+Цифро-вой код
+Краткое наимено-вание
+А 1 1а 1б 2 2а 3 4 5 6 7 8 9 10 10а 11
+- 1 0278 Журнал "В гостях у доброй сказки" №5 - 796 шт 3300 38.02 125 459.02 без акциза 22% 27 600.98 153 060.00 - - -
+- 2 0279 Журнал "Карамельки" №5 - 796 шт 2850 45.15 128 670.49 без акциза 22% 28 307.51 156 978.00 - - -
+Всего к оплате 254 129.51 Х 55 908.49 310 038.00`;
+
+describe("invoice parser registry", () => {
+  it("detects UA invoices", () => {
+    expect(detectVatInvoiceUaV1(sampleText)).toBeGreaterThan(0);
+    expect(detectAndParseInvoice(sampleText).contour).toBe("UA");
+  });
+
+  it("detects RU invoices", () => {
+    expect(detectVatInvoiceRuV1(sampleRuText)).toBeGreaterThan(0);
+    expect(detectAndParseInvoice(sampleRuText).contour).toBe("RU");
+  });
+
+  it("fails on unknown invoice contour", () => {
+    expect(() => detectAndParseInvoice("just a random text file")).toThrow(
+      /supported invoice contour/i,
+    );
+  });
+});
+
+describe("parseVatInvoiceRuV1", () => {
+  it("extracts header and line items", () => {
+    const parsed = parseVatInvoiceRuV1(sampleRuText);
+
+    expect(parsed.documentType).toBe("Счет-фактура");
+    expect(parsed.documentNumber).toBe("035");
+    expect(parsed.documentDate).toBe("24.04.2026");
+    expect(parsed.supplier.name).toBe('Общество с ограниченной ответственностью "Кубаньпечать"');
+    expect(parsed.supplier.taxId).toBe("2310044604");
+    expect(parsed.supplier.kpp).toBe("231001001");
+    expect(parsed.recipient.name).toBe('ООО Издательский дом "Семейная пресса"');
+    expect(parsed.recipient.taxId).toBe("9309026071");
+    expect(parsed.recipient.kpp).toBe("930901001");
+    expect(parsed.totalAmount).toBe("310038.00");
+    expect(parsed.vatAmount).toBe("55908.49");
+    expect(parsed.baseAmount).toBe("254129.51");
+    expect(parsed.lineItems).toHaveLength(2);
+    expect(parsed.lineItems[0]).toMatchObject({
+      lineNo: 1,
+      sourceRowCode: null,
+      serviceCode: "0278",
+      description: 'Журнал "В гостях у доброй сказки" №5',
+      itemTypeCode: null,
+      unitCode: "796",
+      unitName: "шт",
+      quantity: "3300",
+      unitPrice: "38.02",
+      lineBaseAmount: "125459.02",
+      exciseAmount: null,
+      vatRate: "22%",
+      lineVatAmount: "27600.98",
+      lineTotalAmount: "153060.00",
+      countryCode: null,
+      countryName: null,
+      customsDeclarationNumber: null,
+    });
+    expect(parsed.lineItems[1]).toMatchObject({
+      lineNo: 2,
+      sourceRowCode: null,
+      serviceCode: "0279",
+      description: 'Журнал "Карамельки" №5',
+      unitCode: "796",
+      unitName: "шт",
+      quantity: "2850",
+      unitPrice: "45.15",
+      lineBaseAmount: "128670.49",
+      lineVatAmount: "28307.51",
+      lineTotalAmount: "156978.00",
+    });
+  });
+
+  it("stores the first RU column as sourceRowCode when present", () => {
+    const parsed = parseVatInvoiceRuV1(`Универсальный передаточный документ Статус: 1
+Счет-фактура № 706 от 9 апреля 2026 г.
+Продавец Общество с ограниченной ответственностью "Кубаньпечать" (2)
+Адрес 350010, Краснодарский край (2а)
+ИНН/КПП продавца 2310044604/231001001 (2б)
+Покупатель ООО Издательский дом "Семейная пресса" (6)
+Адрес Донецк (6а)
+ИНН/КПП покупателя 9309026071/930901001 (6б)
+А 1 1а 1б 2 2а 3 4 5 6 7 8 9 10 10а 11
+БП-00006405 1 Газета "Итоги и факты. События недели" № 16 - 979 103 экз 10 2 950.00 29 500.00 без акциза 22% 6 490.00 35 990.00 - -
+Всего к оплате 29 500.00 Х 6 490.00 35 990.00`);
+
+    expect(parsed.lineItems).toHaveLength(1);
+    expect(parsed.lineItems[0]).toMatchObject({
+      lineNo: 1,
+      sourceRowCode: "БП-00006405",
+      serviceCode: null,
+      description: 'Газета "Итоги и факты. События недели" № 16',
+      itemTypeCode: "979",
+      unitCode: "103",
+      unitName: "экз",
+      quantity: "10",
+      unitPrice: "2950.00",
+      lineBaseAmount: "29500.00",
+      lineVatAmount: "6490.00",
+      lineTotalAmount: "35990.00",
+    });
+  });
+
+  it("extracts all RU rows when source row codes are present", () => {
+    const parsed = parseVatInvoiceRuV1(`Универсальный передаточный документ Статус: 1
+Счет-фактура № 628 от 1 апреля 2026 г.
+Продавец Общество с ограниченной ответственностью "Кубаньпечать" (2)
+Адрес 350010, Краснодарский край (2а)
+ИНН/КПП продавца 2310044604/231001001 (2б)
+Покупатель ООО Издательский дом "Семейная пресса" (6)
+Адрес Донецк (6а)
+ИНН/КПП покупателя 9309026071/930901001 (6б)
+А 1 1а 1б 2 2а 3 4 5 6 7 8 9 10 10а 11
+БП-00002441 1 Типографские работы по печати газеты "Сканворды. Копейка" №13 (16 А4, 4+1) (заказ 452) - 902 экз 4400.00 3.03 13 344.26 без акциза 22% 2 935.74 16 280.00 - - -
+БП-00002441 2 Типографские работы по печати газеты "Сканворды. Копейка" №14 (16 А4, 4+1) (заказ 453) - 902 экз 4400.00 3.03 13 344.26 без акциза 22% 2 935.74 16 280.00 - - -
+Всего к оплате 26 688.52 Х 5 871.48 32 560.00`);
+
+    expect(parsed.lineItems).toHaveLength(2);
+    expect(parsed.lineItems[0]).toMatchObject({
+      lineNo: 1,
+      sourceRowCode: "БП-00002441",
+      serviceCode: null,
+      description:
+        'Типографские работы по печати газеты "Сканворды. Копейка" №13 (16 А4, 4+1) (заказ 452)',
+      unitCode: "902",
+      unitName: "экз",
+      quantity: "4400.00",
+    });
+    expect(parsed.lineItems[1]).toMatchObject({
+      lineNo: 2,
+      sourceRowCode: "БП-00002441",
+    });
+  });
+
+  it("extracts RU rows without a service code before the description", () => {
+    const parsed = parseVatInvoiceRuV1(`Универсальный передаточный документ Статус: 1
+Счет-фактура № 988 от 7 апреля 2026 г.
+Продавец Общество с ограниченной ответственностью "Кубаньпечать" (2)
+Адрес 350010, Краснодарский край (2а)
+ИНН/КПП продавца 2310044604/231001001 (2б)
+Покупатель ООО Издательский дом "Семейная пресса" (6)
+Адрес Донецк (6а)
+ИНН/КПП покупателя 9309026071/930901001 (6б)
+А 1 1а 1б 2 2а 3 4 5 6 7 8 9 10 10а 11
+- 1 По-крупному. Соцветие сканвордов № 5 - 796 шт 2800 14.70 41 150.82 без акциза 22% 9 053.18 50 204.00 - - -
+- 2 Соцветие сканвордов" № 5 - 796 шт 2800 14.70 41 150.82 без акциза 22% 9 053.18 50 204.00 - - -
+- 3 Царство сканвордов" № 5 - 796 шт 4250 16.64 70 717.21 без акциза 22% 15 557.79 86 275.00 - - -
+- 4 Любимая ярмарка сканвордов № 8 - 796 шт 12000 16.68 200 163.93 без акциза 22% 44 036.07 244 200.00 - - -
+Всего к оплате 353 182.78 Х 77 700.22 430 883.00`);
+
+    expect(parsed.lineItems).toHaveLength(4);
+    expect(parsed.lineItems[0]).toMatchObject({
+      lineNo: 1,
+      sourceRowCode: null,
+      serviceCode: null,
+      description: "По-крупному. Соцветие сканвордов № 5",
+    });
+    expect(parsed.lineItems[3]).toMatchObject({
+      lineNo: 4,
+      lineTotalAmount: "244200.00",
+    });
+  });
+});
 
 describe("parseVatInvoiceUaV1", () => {
   it("extracts header and line items", () => {
@@ -255,6 +454,16 @@ describe("parsePublicationIssueDescription", () => {
       publicationName: "Філворди",
       rawIssueNumber: "5",
       canonicalIssueNumber: "05-26",
+    });
+  });
+
+  it("parses RU publication descriptions independently", () => {
+    expect(
+      parsePublicationIssueDescriptionRuV1('Журнал "Сканворды" №4 /рус/', documentDate),
+    ).toEqual({
+      publicationName: "Сканворды",
+      rawIssueNumber: "4",
+      canonicalIssueNumber: "04-26",
     });
   });
 

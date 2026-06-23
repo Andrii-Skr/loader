@@ -18,6 +18,10 @@
     "pageNotFound": "Страница не найдена.",
     "fieldManifest": "Структура полей",
     "currentContour": "Текущий контур",
+    "documentContourUa": "Контур UA",
+    "documentContourRu": "Контур RU",
+    "documentContourUnknown": "Контур не определён",
+    "parserVersion": "Парсер",
     "restrictedRoom": "Закрытая рабочая зона",
     "editionMappings": "Соответствия изданий"
   },
@@ -44,6 +48,10 @@
     "titleLine2": "",
     "registryTitle": "Реестр документов",
     "registryDescription": "Последние загрузки и их текущий статус.",
+    "actionableSectionTitle": "Требуют действий",
+    "completedSectionTitle": "Готовые по месяцам",
+    "completedUndatedMonth": "Без даты документа",
+    "completedMonthToggle": "Переключить список документов месяца",
     "documentDatePrefix": "от",
     "emptyRegistry": "Реестр пуст. Загрузите первый PDF.",
     "deleteAction": "Удалить",
@@ -126,6 +134,8 @@
       "missingPdf": "Выберите PDF-файл.",
       "invalidInput": "Некорректные данные формы.",
       "duplicateDocument": "Этот документ уже есть в реестре.",
+      "documentContourUnknown": "PDF не совпал ни с одним поддерживаемым контуром накладной",
+      "documentContourAmbiguous": "PDF одинаково совпал с несколькими контурами накладной",
       "savedAndParsed": "Документ сохранен и разобран.",
       "batchSummary": "Загружено: {success}. Дубликатов: {duplicates}. Ошибок: {failed}.",
       "parseFailedPrefix": "Ошибка парсинга",
@@ -138,7 +148,7 @@
   "PublicationMappings": {
     "eyebrow": "Админ-реестр",
     "title": "Соответствия изданий и номеров",
-    "description": "Ручное сопоставление распарсенных пар из PDF с позициями IDZ-UKR.",
+    "description": "Ручное сопоставление распарсенных пар из PDF с позициями внешнего источника.",
     "registryTitle": "Локальные распарсенные пары",
     "registryTable": {
       "parsedPublication": "Распарсенное издание",
@@ -166,7 +176,8 @@
     "filters": {
       "all": "Все",
       "matched": "Сопоставленные",
-      "unmatched": "Несопоставленные"
+      "unmatched": "Несопоставленные",
+      "document-unmatched": "Несопоставленные по документу"
     },
     "messages": {
       "missingSession": "Сессия не найдена.",

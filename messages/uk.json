@@ -18,6 +18,10 @@
     "pageNotFound": "Сторінку не знайдено.",
     "fieldManifest": "Структура полів",
     "currentContour": "Поточний контур",
+    "documentContourUa": "Контур UA",
+    "documentContourRu": "Контур RU",
+    "documentContourUnknown": "Контур не визначено",
+    "parserVersion": "Парсер",
     "restrictedRoom": "Закрита робоча зона",
     "editionMappings": "Відповідності видань"
   },
@@ -44,6 +48,10 @@
     "titleLine2": "",
     "registryTitle": "Реєстр документів",
     "registryDescription": "Останні завантаження та їх поточний статус.",
+    "actionableSectionTitle": "Потребують дій",
+    "completedSectionTitle": "Готові за місяцями",
+    "completedUndatedMonth": "Без дати документа",
+    "completedMonthToggle": "Перемкнути список документів місяця",
     "documentDatePrefix": "від",
     "emptyRegistry": "Реєстр порожній. Завантажте перший PDF.",
     "deleteAction": "Видалити",
@@ -126,6 +134,8 @@
       "missingPdf": "Оберіть PDF-файл.",
       "invalidInput": "Некоректні дані форми.",
       "duplicateDocument": "Цей документ уже є в реєстрі.",
+      "documentContourUnknown": "PDF не збігся з жодним підтримуваним контуром накладної",
+      "documentContourAmbiguous": "PDF однаково збігся з кількома контурами накладної",
       "savedAndParsed": "Документ збережено та розібрано.",
       "batchSummary": "Завантажено: {success}. Дублікатів: {duplicates}. Помилок: {failed}.",
       "parseFailedPrefix": "Помилка парсингу",
@@ -138,7 +148,7 @@
   "PublicationMappings": {
     "eyebrow": "Адмін-реєстр",
     "title": "Відповідності видань і номерів",
-    "description": "Ручне зіставлення розпарсених пар із PDF з позиціями IDZ-UKR.",
+    "description": "Ручне зіставлення розпарсених пар із PDF з позиціями зовнішнього джерела.",
     "registryTitle": "Локальні розпарсені пари",
     "registryTable": {
       "parsedPublication": "Розпарсене видання",
@@ -166,7 +176,8 @@
     "filters": {
       "all": "Усі",
       "matched": "Зіставлені",
-      "unmatched": "Незіставлені"
+      "unmatched": "Незіставлені",
+      "document-unmatched": "Незіставлені за документом"
     },
     "messages": {
       "missingSession": "Сесію не знайдено.",

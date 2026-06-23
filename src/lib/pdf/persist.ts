@@ -1,32 +1,51 @@
 import { DocumentStatus, Prisma } from "@/generated/prisma/client";
 
-import { parsePublicationIssueDescription, parseVatInvoiceUaV1 } from "@/lib/pdf/parser";
+import { getStoredPartyTaxId } from "@/lib/documents/party-tax-id";
+import {
+  type DocumentContour,
+  getInvoiceParserByContour,
+  normalizeLookupKey,
+} from "@/lib/pdf/parser";
 import { prisma } from "@/lib/prisma";
 
 type IngestVatInvoiceInput = {
   documentId: number;
   rawText: string;
+  contour: DocumentContour;
 };
 
-export const ingestVatInvoice = async ({ documentId, rawText }: IngestVatInvoiceInput) => {
-  const parsed = parseVatInvoiceUaV1(rawText);
+export const ingestVatInvoice = async ({ documentId, rawText, contour }: IngestVatInvoiceInput) => {
+  const parser = getInvoiceParserByContour(contour);
+  const parsed = parser.parse(rawText);
+  const supplierTaxId = getStoredPartyTaxId({
+    contour,
+    taxId: parsed.supplier.taxId,
+    kpp: parsed.supplier.kpp,
+  });
+  const recipientTaxId = getStoredPartyTaxId({
+    contour,
+    taxId: parsed.recipient.taxId,
+    kpp: parsed.recipient.kpp,
+  });
 
   return prisma.$transaction(async (tx) => {
     const supplier = await tx.supplier.upsert({
-      where: { taxId: parsed.supplier.taxId },
-      update: { name: parsed.supplier.name },
+      where: { taxId: supplierTaxId },
+      update: { name: parsed.supplier.name, kpp: parsed.supplier.kpp },
       create: {
         name: parsed.supplier.name,
-        taxId: parsed.supplier.taxId,
+        taxId: supplierTaxId,
+        kpp: parsed.supplier.kpp,
       },
     });
 
     const recipient = await tx.recipient.upsert({
-      where: { taxId: parsed.recipient.taxId },
-      update: { name: parsed.recipient.name },
+      where: { taxId: recipientTaxId },
+      update: { name: parsed.recipient.name, kpp: parsed.recipient.kpp },
       create: {
         name: parsed.recipient.name,
-        taxId: parsed.recipient.taxId,
+        taxId: recipientTaxId,
+        kpp: parsed.recipient.kpp,
       },
     });
 
@@ -36,7 +55,7 @@ export const ingestVatInvoice = async ({ documentId, rawText }: IngestVatInvoice
 
     const lineItemsWithPublicationIssue = await Promise.all(
       parsed.lineItems.map(async (item) => {
-        const publicationIssue = parsePublicationIssueDescription(
+        const publicationIssue = parser.parsePublicationIssueDescription(
           item.description,
           parsed.documentDate,
         );
@@ -50,23 +69,39 @@ export const ingestVatInvoice = async ({ documentId, rawText }: IngestVatInvoice
         }
 
         const publication = await tx.publication.upsert({
-          where: { normalizedName: normalizeLookupKey(publicationIssue.publicationName) },
+          where: {
+            normalizedName: normalizeLookupKey(
+              publicationIssue.publicationName,
+              parser.lookupLocale,
+            ),
+          },
           update: { displayName: publicationIssue.publicationName },
           create: {
             displayName: publicationIssue.publicationName,
-            normalizedName: normalizeLookupKey(publicationIssue.publicationName),
+            normalizedName: normalizeLookupKey(
+              publicationIssue.publicationName,
+              parser.lookupLocale,
+            ),
           },
         });
 
         const issueNumber = await tx.issueNumber.upsert({
-          where: { normalizedValue: normalizeLookupKey(publicationIssue.canonicalIssueNumber) },
+          where: {
+            normalizedValue: normalizeLookupKey(
+              publicationIssue.canonicalIssueNumber,
+              parser.lookupLocale,
+            ),
+          },
           update: {
             canonicalValue: publicationIssue.canonicalIssueNumber,
           },
           create: {
             rawValue: publicationIssue.rawIssueNumber,
             canonicalValue: publicationIssue.canonicalIssueNumber,
-            normalizedValue: normalizeLookupKey(publicationIssue.canonicalIssueNumber),
+            normalizedValue: normalizeLookupKey(
+              publicationIssue.canonicalIssueNumber,
+              parser.lookupLocale,
+            ),
           },
         });
 
@@ -98,12 +133,14 @@ export const ingestVatInvoice = async ({ documentId, rawText }: IngestVatInvoice
     const document = await tx.document.update({
       where: { id: documentId },
       data: {
-        parserVersion: "vat-invoice-ua-v1",
+        documentContour: contour,
+        parserVersion: parser.parserVersion,
         documentType: parsed.documentType,
         documentNumber: parsed.documentNumber,
         documentDate: parseDocumentDate(parsed.documentDate),
         supplierId: supplier.id,
         recipientId: recipient.id,
+        currency: getCurrencyByContour(contour),
         totalAmount: new Prisma.Decimal(parsed.totalAmount),
         vatAmount: parsed.vatAmount ? new Prisma.Decimal(parsed.vatAmount) : null,
         baseAmount: parsed.baseAmount ? new Prisma.Decimal(parsed.baseAmount) : null,
@@ -116,7 +153,9 @@ export const ingestVatInvoice = async ({ documentId, rawText }: IngestVatInvoice
             lineNo: item.lineNo,
             description: item.description,
             publicationIssueId,
+            sourceRowCode: item.sourceRowCode,
             serviceCode: item.serviceCode,
+            itemTypeCode: item.itemTypeCode,
             unitName: item.unitName,
             unitCode: item.unitCode,
             quantity: new Prisma.Decimal(item.quantity),
@@ -125,6 +164,11 @@ export const ingestVatInvoice = async ({ documentId, rawText }: IngestVatInvoice
             benefitCode: item.benefitCode,
             lineBaseAmount: new Prisma.Decimal(item.lineBaseAmount),
             lineVatAmount: new Prisma.Decimal(item.lineVatAmount),
+            exciseAmount: item.exciseAmount ? new Prisma.Decimal(item.exciseAmount) : null,
+            lineTotalAmount: item.lineTotalAmount ? new Prisma.Decimal(item.lineTotalAmount) : null,
+            countryCode: item.countryCode,
+            countryName: item.countryName,
+            customsDeclarationNumber: item.customsDeclarationNumber,
             rawRowText: item.rawRowText,
           })),
         },
@@ -147,5 +191,5 @@ const parseDocumentDate = (value: string): Date => {
   return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
 };
 
-const normalizeLookupKey = (value: string): string =>
-  value.replace(/\s+/g, " ").trim().toLocaleLowerCase("uk-UA");
+const getCurrencyByContour = (contour: DocumentContour): string =>
+  contour === "RU" ? "RUB" : "UAH";
