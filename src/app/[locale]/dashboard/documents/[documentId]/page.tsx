@@ -78,7 +78,7 @@ const formatDocumentLabel = ({
 const formatPublicationIssueLabel = (item: {
   publicationIssue: {
     publication: { displayName: string; _count: { mappings: number } };
-    issueNumber: { canonicalValue: string; _count: { mappings: number } };
+    issueNumber: { canonicalValue: string };
   } | null;
 }) => {
   if (!item.publicationIssue) {

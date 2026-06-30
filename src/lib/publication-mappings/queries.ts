@@ -4,10 +4,13 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getExactCandidateCounts } from "@/lib/publication-mappings/service";
 import type {
+  PublicationIssueDocumentOccurrence,
   PublicationIssueMatchSummary,
   PublicationIssueRegistryFilter,
   PublicationIssueRegistryItem,
 } from "@/lib/publication-mappings/types";
+
+const REGISTRY_OCCURRENCE_LIMIT = 10;
 
 const buildRegistryWhere = (
   filter: PublicationIssueRegistryFilter,
@@ -26,27 +29,15 @@ const buildRegistryWhere = (
   if (filter === "matched") {
     return {
       publication: { is: { mappings: { some: {} } } },
-      issueNumber: { is: { mappings: { some: {} } } },
     };
   }
 
   if (filter === "unmatched") {
-    return {
-      OR: [
-        { publication: { is: { mappings: { none: {} } } } },
-        { issueNumber: { is: { mappings: { none: {} } } } },
-      ],
-    };
+    return {};
   }
 
   if (filter === "document-unmatched") {
-    return {
-      ...documentScopedWhere,
-      OR: [
-        { publication: { is: { mappings: { none: {} } } } },
-        { issueNumber: { is: { mappings: { none: {} } } } },
-      ],
-    };
+    return documentScopedWhere;
   }
 
   return {};
@@ -66,27 +57,23 @@ const mapSummary = (publicationIssue: {
   };
   issueNumber: {
     id: number;
+    rawValue: string;
     canonicalValue: string;
-    mappings: Array<{
-      id: number;
-      externalIssueId: number;
-      externalIssueNumber: string;
-      source: { code: string; displayName: string };
-    }>;
+  };
+  _count: {
+    lineItems: number;
   };
 }): PublicationIssueMatchSummary => ({
   publicationIssueId: publicationIssue.id,
   publicationId: publicationIssue.publication.id,
   issueNumberId: publicationIssue.issueNumber.id,
   publicationName: publicationIssue.publication.displayName,
+  parsedIssueNumber: publicationIssue.issueNumber.rawValue,
   canonicalIssueNumber: publicationIssue.issueNumber.canonicalValue,
   publicationMappingCount: publicationIssue.publication.mappings.length,
-  issueNumberMappingCount: publicationIssue.issueNumber.mappings.length,
   publicationCandidateCount: 0,
   issueNumberCandidateCount: 0,
-  fullyMatched:
-    publicationIssue.publication.mappings.length > 0 &&
-    publicationIssue.issueNumber.mappings.length > 0,
+  fullyMatched: false,
   publicationMappings: publicationIssue.publication.mappings.map((mapping) => ({
     id: mapping.id,
     sourceCode: mapping.source.code,
@@ -94,14 +81,79 @@ const mapSummary = (publicationIssue: {
     externalEditionId: mapping.externalEditionId,
     externalEditionName: mapping.externalEditionName,
   })),
-  issueNumberMappings: publicationIssue.issueNumber.mappings.map((mapping) => ({
-    id: mapping.id,
-    sourceCode: mapping.source.code,
-    sourceDisplayName: mapping.source.displayName,
-    externalIssueId: mapping.externalIssueId,
-    externalIssueNumber: mapping.externalIssueNumber,
-  })),
 });
+
+const getConfirmedDocumentMatchCounts = async ({
+  documentId,
+  publicationIssueIds,
+}: {
+  documentId?: number;
+  publicationIssueIds: number[];
+}) => {
+  if (publicationIssueIds.length === 0) {
+    return new Map<number, number>();
+  }
+
+  const rows = await prisma.specialDocument.groupBy({
+    by: ["publicationIssueId"],
+    where: {
+      publicationIssueId: { in: publicationIssueIds },
+      publicationIssueConfirmedAt: { not: null },
+      ...(documentId ? { documentId } : {}),
+    },
+    _count: {
+      _all: true,
+    },
+  });
+
+  return new Map(
+    rows.flatMap((row) =>
+      row.publicationIssueId === null ? [] : [[row.publicationIssueId, row._count._all] as const],
+    ),
+  );
+};
+
+const mapDocumentOccurrences = (
+  lineItems: Array<{
+    description: string;
+    rawRowText: string | null;
+    document: {
+      documentNumber: string | null;
+      sourceFileName: string;
+    };
+  }>,
+): PublicationIssueDocumentOccurrence[] =>
+  lineItems.map((lineItem) => ({
+    documentNumber: lineItem.document.documentNumber,
+    sourceFileName: lineItem.document.sourceFileName,
+    description: lineItem.description,
+    rawRowText: lineItem.rawRowText,
+  }));
+
+export const getPublicationIssueOccurrences = async (
+  publicationIssueId: number,
+): Promise<PublicationIssueDocumentOccurrence[]> => {
+  const item = await prisma.publicationIssue.findUnique({
+    where: { id: publicationIssueId },
+    select: {
+      lineItems: {
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        select: {
+          description: true,
+          rawRowText: true,
+          document: {
+            select: {
+              documentNumber: true,
+              sourceFileName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return mapDocumentOccurrences(item?.lineItems ?? []);
+};
 
 export const getPublicationIssueRegistry = cache(
   async (
@@ -132,27 +184,24 @@ export const getPublicationIssueRegistry = cache(
         issueNumber: {
           select: {
             id: true,
+            rawValue: true,
             canonicalValue: true,
-            mappings: {
-              orderBy: [{ externalIssueNumber: "asc" }],
-              include: {
-                source: {
-                  select: {
-                    code: true,
-                    displayName: true,
-                  },
-                },
-              },
-            },
+          },
+        },
+        _count: {
+          select: {
+            lineItems: true,
           },
         },
         lineItems: {
-          take: 5,
+          take: REGISTRY_OCCURRENCE_LIMIT,
           orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
           select: {
             description: true,
+            rawRowText: true,
             document: {
               select: {
+                documentNumber: true,
                 sourceFileName: true,
               },
             },
@@ -168,23 +217,41 @@ export const getPublicationIssueRegistry = cache(
         canonicalIssueNumber: item.issueNumber.canonicalValue,
       })),
     );
+    const confirmedMatchCounts = await getConfirmedDocumentMatchCounts({
+      documentId,
+      publicationIssueIds: items.map((item) => item.id),
+    });
 
-    return items.map((item) => {
+    const registryItems = items.map((item) => {
       const counts = candidateCounts.get(item.id) ?? {
         publicationCandidateCount: 0,
         issueNumberCandidateCount: 0,
       };
+      const hasConfirmedDocumentMatch = (confirmedMatchCounts.get(item.id) ?? 0) > 0;
+
+      const fullyMatched =
+        item.publication.mappings.length > 0 &&
+        counts.issueNumberCandidateCount > 0 &&
+        hasConfirmedDocumentMatch;
 
       return {
         ...mapSummary(item),
         ...counts,
-        sampleDescriptions: Array.from(
-          new Set(item.lineItems.map((lineItem) => lineItem.description)),
-        ),
-        documentLabels: Array.from(
-          new Set(item.lineItems.map((lineItem) => lineItem.document.sourceFileName)),
-        ),
+        fullyMatched,
+        hasConfirmedDocumentMatch,
+        documentOccurrences: mapDocumentOccurrences(item.lineItems),
+        documentOccurrenceCount: item._count.lineItems,
       };
     });
+
+    if (filter === "matched") {
+      return registryItems.filter((item) => item.fullyMatched);
+    }
+
+    if (filter === "unmatched" || filter === "document-unmatched") {
+      return registryItems.filter((item) => !item.fullyMatched);
+    }
+
+    return registryItems;
   },
 );

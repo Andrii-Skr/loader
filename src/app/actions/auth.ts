@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { signIn } from "@/auth";
 import type { AppLocale } from "@/i18n/routing";
+import { appAction } from "@/utils/appAction";
 
 const loginSchema = z.object({
   login: z.string().min(3).max(64),
@@ -18,30 +19,31 @@ export type LoginActionResult = {
 export const loginWithCredentials = async (
   locale: AppLocale,
   values: z.infer<typeof loginSchema>,
-): Promise<LoginActionResult> => {
-  const parsed = loginSchema.safeParse(values);
+): Promise<LoginActionResult> =>
+  appAction<z.input<typeof loginSchema>, z.infer<typeof loginSchema>, LoginActionResult>(
+    async (parsedValues) => {
+      try {
+        await signIn("credentials", {
+          login: parsedValues.login,
+          password: parsedValues.password,
+          redirectTo: `/${locale}/dashboard`,
+        });
 
-  if (!parsed.success) {
-    return {
-      errorKey: "invalidInput",
-    };
-  }
+        return { errorKey: null };
+      } catch (error) {
+        if (error instanceof AuthError) {
+          return {
+            errorKey: "invalidCredentials",
+          };
+        }
 
-  try {
-    await signIn("credentials", {
-      login: parsed.data.login,
-      password: parsed.data.password,
-      redirectTo: `/${locale}/dashboard`,
-    });
-
-    return { errorKey: null };
-  } catch (error) {
-    if (error instanceof AuthError) {
-      return {
-        errorKey: "invalidCredentials",
-      };
-    }
-
-    throw error;
-  }
-};
+        throw error;
+      }
+    },
+    {
+      schema: loginSchema,
+      onInvalidInput: () => ({
+        errorKey: "invalidInput",
+      }),
+    },
+  )(values);

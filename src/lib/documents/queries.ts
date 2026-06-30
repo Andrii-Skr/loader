@@ -23,11 +23,6 @@ const getDocumentDetailsLineItemsArgs = () =>
           issueNumber: {
             select: {
               canonicalValue: true,
-              _count: {
-                select: {
-                  mappings: true,
-                },
-              },
             },
           },
         },
@@ -39,24 +34,15 @@ export const getDashboardDocuments = cache(async () => {
   try {
     const documents = await prisma.document.findMany({
       orderBy: { createdAt: "desc" },
-      take: 12,
       include: {
         supplier: true,
         recipient: true,
         lineItems: {
           select: {
+            publicationIssueConfirmedAt: true,
             publicationIssue: {
               select: {
                 publication: {
-                  select: {
-                    _count: {
-                      select: {
-                        mappings: true,
-                      },
-                    },
-                  },
-                },
-                issueNumber: {
                   select: {
                     _count: {
                       select: {

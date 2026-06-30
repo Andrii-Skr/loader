@@ -173,6 +173,14 @@
     "savePending": "Збереження...",
     "emptyPublicationCandidates": "Кандидатів за виданням не знайдено. Спробуйте ширший запит.",
     "emptyIssueNumberCandidates": "Кандидатів за номером не знайдено. Спробуйте ширший запит.",
+    "tooltip": {
+      "title": "Розпарсена пара",
+      "documentNumberLabel": "Номер документа",
+      "rawDataLabel": "Значення з колонки PDF",
+      "occurrenceSummary": "Показано {shown} із {total}",
+      "loadMore": "Показати все",
+      "loadMorePending": "Завантаження..."
+    },
     "filters": {
       "all": "Усі",
       "matched": "Зіставлені",

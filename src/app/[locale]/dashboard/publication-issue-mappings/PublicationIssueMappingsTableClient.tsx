@@ -32,9 +32,11 @@ type Entry = {
 };
 
 export function PublicationIssueMappingsTableClient({
+  documentId,
   entries,
   locale,
 }: {
+  documentId?: number;
   entries: Entry[];
   locale: AppLocale;
 }) {
@@ -55,7 +57,10 @@ export function PublicationIssueMappingsTableClient({
       setServerMessage({ error: null, success: null });
 
       const publicationSelections = new Map<number, Set<number>>();
-      const issueSelections = new Map<number, Set<number>>();
+      const issueConfirmations: Array<{
+        publicationIssueId: number;
+        hasConfirmedIssue: boolean;
+      }> = [];
 
       for (const { item } of entries) {
         const handle = editorRefs.current[item.publicationIssueId];
@@ -67,22 +72,20 @@ export function PublicationIssueMappingsTableClient({
         const selectionState = handle.getSelections();
         const publicationSelectionSet =
           publicationSelections.get(selectionState.publicationId) ?? new Set<number>();
-        const issueSelectionSet =
-          issueSelections.get(selectionState.issueNumberId) ?? new Set<number>();
 
         for (const selectionId of selectionState.publicationSelectionIds) {
           publicationSelectionSet.add(selectionId);
         }
 
-        for (const selectionId of selectionState.issueSelectionIds) {
-          issueSelectionSet.add(selectionId);
-        }
-
         publicationSelections.set(selectionState.publicationId, publicationSelectionSet);
-        issueSelections.set(selectionState.issueNumberId, issueSelectionSet);
+        issueConfirmations.push({
+          publicationIssueId: selectionState.publicationIssueId,
+          hasConfirmedIssue: selectionState.hasConfirmedIssue,
+        });
       }
 
       const result = await savePublicationIssueMappingRegistry({
+        documentId,
         locale,
         publicationSelections: Array.from(publicationSelections.entries()).map(
           ([publicationId, selectionIds]) => ({
@@ -90,12 +93,7 @@ export function PublicationIssueMappingsTableClient({
             selectionIds: Array.from(selectionIds),
           }),
         ),
-        issueSelections: Array.from(issueSelections.entries()).map(
-          ([issueNumberId, selectionIds]) => ({
-            issueNumberId,
-            selectionIds: Array.from(selectionIds),
-          }),
-        ),
+        issueConfirmations,
       });
 
       if (result.errorKey) {

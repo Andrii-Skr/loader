@@ -146,7 +146,11 @@ export default async function PublicationIssueMappingsPage({
             {t("emptyRegistry")}
           </p>
         ) : (
-          <PublicationIssueMappingsTableClient entries={editorEntries} locale={locale} />
+          <PublicationIssueMappingsTableClient
+            documentId={documentId}
+            entries={editorEntries}
+            locale={locale}
+          />
         )}
       </Card>
     </div>

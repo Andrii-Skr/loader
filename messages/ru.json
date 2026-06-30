@@ -173,6 +173,14 @@
     "savePending": "Сохранение...",
     "emptyPublicationCandidates": "Кандидаты по изданию не найдены. Попробуйте расширить запрос.",
     "emptyIssueNumberCandidates": "Кандидаты по номеру не найдены. Попробуйте расширить запрос.",
+    "tooltip": {
+      "title": "Распарсенная пара",
+      "documentNumberLabel": "Номер документа",
+      "rawDataLabel": "Значение из колонки PDF",
+      "occurrenceSummary": "Показано {shown} из {total}",
+      "loadMore": "Показать все",
+      "loadMorePending": "Загрузка..."
+    },
     "filters": {
       "all": "Все",
       "matched": "Сопоставленные",

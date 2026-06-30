@@ -113,15 +113,29 @@ describe("getDocumentMappingStatus", () => {
     expect(
       getDocumentMappingStatus([
         {
+          publicationIssueConfirmedAt: null,
           publicationIssue: null,
         },
         {
+          publicationIssueConfirmedAt: null,
           publicationIssue: {
             publication: { _count: { mappings: 0 } },
-            issueNumber: { _count: { mappings: 0 } },
           },
         },
       ]),
     ).toBe("unparsed");
+  });
+
+  it("treats mapped-but-unconfirmed rows as partially matched", () => {
+    expect(
+      getDocumentMappingStatus([
+        {
+          publicationIssueConfirmedAt: null,
+          publicationIssue: {
+            publication: { _count: { mappings: 1 } },
+          },
+        },
+      ]),
+    ).toBe("partiallyMatched");
   });
 });

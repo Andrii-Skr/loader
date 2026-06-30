@@ -18,6 +18,7 @@ import {
 import { Link } from "@/i18n/navigation";
 import type { AppLocale } from "@/i18n/routing";
 import type { MappingStatusKey } from "@/lib/documents/mapping-status";
+import { cn } from "@/lib/utils";
 
 type RegistryDocumentRow = {
   id: number;
@@ -69,27 +70,42 @@ function RegistryDocumentTableRow({
   pendingLabel: string;
   mappingStatusLabels: Record<MappingStatusKey, string>;
 }) {
+  const href = `/dashboard/documents/${document.id}`;
+  const rowCellClassName = "transition-colors group-hover:bg-[rgba(177,74,47,0.08)]";
+  const rowLinkClassName =
+    "block -mx-4 -my-[14px] px-4 py-[14px] focus-visible:bg-[rgba(177,74,47,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-inset";
+
   return (
-    <TableRow key={document.id}>
-      <TableCell>
-        <strong>
-          <Link href={`/dashboard/documents/${document.id}`} locale={locale}>
-            {document.label}
-          </Link>
-        </strong>
-        <div className="muted">{document.supplierTaxId ?? pendingLabel}</div>
+    <TableRow className="group">
+      <TableCell className={rowCellClassName}>
+        <Link className={rowLinkClassName} href={href} locale={locale}>
+          <strong>{document.label}</strong>
+          <div className="muted">{document.supplierTaxId ?? pendingLabel}</div>
+        </Link>
       </TableCell>
-      <TableCell>{document.supplierName ?? pendingLabel}</TableCell>
-      <TableCell>{document.recipientName ?? pendingLabel}</TableCell>
-      <TableCell>{document.totalAmount ?? pendingLabel}</TableCell>
-      <TableCell>
+      <TableCell className={rowCellClassName}>
+        <Link className={rowLinkClassName} href={href} locale={locale}>
+          {document.supplierName ?? pendingLabel}
+        </Link>
+      </TableCell>
+      <TableCell className={rowCellClassName}>
+        <Link className={rowLinkClassName} href={href} locale={locale}>
+          {document.recipientName ?? pendingLabel}
+        </Link>
+      </TableCell>
+      <TableCell className={rowCellClassName}>
+        <Link className={rowLinkClassName} href={href} locale={locale}>
+          {document.totalAmount ?? pendingLabel}
+        </Link>
+      </TableCell>
+      <TableCell className={rowCellClassName}>
         <MappingStatusIcon
           label={mappingStatusLabels[document.mappingStatus]}
           status={document.mappingStatus}
         />
       </TableCell>
-      <TableCell>{document.lineItemsCount}</TableCell>
-      <TableCell>
+      <TableCell className={rowCellClassName}>{document.lineItemsCount}</TableCell>
+      <TableCell className={cn(rowCellClassName)} data-row-action>
         <DeleteDocumentButton documentId={document.id} locale={locale} />
       </TableCell>
     </TableRow>

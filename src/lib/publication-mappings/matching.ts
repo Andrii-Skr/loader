@@ -9,6 +9,7 @@ type ParsedIssueParts = {
 
 const PUNCTUATION_PATTERN = /[.,/\\()[\]{}"'`:+*?!_-]+/g;
 const BRACKETED_R_MARKER_PATTERN = /\(\s*[rр]\s*\)/giu;
+const REPEATED_LETTER_PATTERN = /(\p{L})\1+/gu;
 
 const normalizeBracketedRMarker = (value: string) =>
   value.replace(BRACKETED_R_MARKER_PATTERN, " (r) ");
@@ -23,6 +24,9 @@ export const tokenizeMatchingText = (value: string) =>
   normalizeMatchingText(value)
     .split(" ")
     .filter((token) => token.length > 0);
+
+const normalizeLooseMatchingText = (value: string) =>
+  normalizeMatchingText(value).replace(REPEATED_LETTER_PATTERN, "$1");
 
 export const normalizeIssueLookupText = (value: string, documentDate?: string) => {
   const normalized = normalizeMatchingText(value);
@@ -103,9 +107,57 @@ const scoreTokenF1 = (targetTokens: string[], candidateTokens: string[]) => {
   return (2 * precision * recall) / (precision + recall);
 };
 
+const scoreEditSimilarity = (target: string, candidate: string) => {
+  if (!target || !candidate) {
+    return 0;
+  }
+
+  if (target === candidate) {
+    return 1;
+  }
+
+  const left = Array.from(target);
+  const right = Array.from(candidate);
+
+  if (left.length === 0 || right.length === 0) {
+    return 0;
+  }
+
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  const current = new Array<number>(right.length + 1).fill(0);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    current[0] = leftIndex;
+
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+
+      current[rightIndex] = Math.min(
+        previous[rightIndex] + 1,
+        current[rightIndex - 1] + 1,
+        previous[rightIndex - 1] + substitutionCost,
+      );
+    }
+
+    for (let rightIndex = 0; rightIndex <= right.length; rightIndex += 1) {
+      previous[rightIndex] = current[rightIndex] ?? 0;
+    }
+  }
+
+  const distance = previous[right.length] ?? Math.max(left.length, right.length);
+  const maxLength = Math.max(left.length, right.length);
+
+  return maxLength === 0 ? 0 : 1 - distance / maxLength;
+};
+
+const scoreIssueLabelSimilarity = (target: string, candidate: string) =>
+  Math.max(scoreTextSimilarity(target, candidate), scoreEditSimilarity(target, candidate));
+
 export const scoreTextSimilarity = (target: string, candidate: string) => {
   const normalizedTarget = normalizeMatchingText(target);
   const normalizedCandidate = normalizeMatchingText(candidate);
+  const looseTarget = normalizeLooseMatchingText(target);
+  const looseCandidate = normalizeLooseMatchingText(candidate);
   const targetTokens = tokenizeMatchingText(normalizedTarget);
   const candidateTokens = tokenizeMatchingText(normalizedCandidate);
 
@@ -125,8 +177,10 @@ export const scoreTextSimilarity = (target: string, candidate: string) => {
   }
 
   const overlapScore = scoreTokenOverlap(targetTokens, candidateTokens);
+  const editScore = scoreEditSimilarity(normalizedTarget, normalizedCandidate);
+  const looseEditScore = scoreEditSimilarity(looseTarget, looseCandidate);
 
-  return overlapScore * 0.8;
+  return Math.max(overlapScore * 0.8, editScore * 0.85, looseEditScore * 0.93);
 };
 
 export const scoreIssueSimilarity = (
@@ -173,7 +227,9 @@ export const scoreIssueSimilarity = (
   }
 
   if (parsedTarget.label && parsedCandidate.label) {
-    score += scoreTextSimilarity(parsedTarget.label, parsedCandidate.label) * 0.1;
+    score += (scoreIssueLabelSimilarity(parsedTarget.label, parsedCandidate.label) - 0.5) * 0.2;
+  } else if (parsedTarget.label || parsedCandidate.label) {
+    score -= 0.05;
   }
 
   return Number(Math.max(score, 0).toFixed(6));

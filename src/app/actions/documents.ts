@@ -6,7 +6,6 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 
-import { auth } from "@/auth";
 import { DocumentStatus } from "@/generated/prisma/client";
 import { type AppLocale, routing } from "@/i18n/routing";
 import { getStoredPartyTaxId } from "@/lib/documents/party-tax-id";
@@ -19,8 +18,10 @@ import {
 } from "@/lib/pdf/parser";
 import { ingestVatInvoice } from "@/lib/pdf/persist";
 import { prisma } from "@/lib/prisma";
+import { abortAction, appAction, appFormDataAction } from "@/utils/appAction";
 
 const uploadInvoiceSchema = z.object({
+  pdfs: z.array(z.instanceof(File)),
   extractedText: z.string().optional(),
 });
 
@@ -55,63 +56,77 @@ const deleteDocumentSchema = z.object({
   locale: z.string(),
 });
 
-export const uploadInvoice = async (formData: FormData): Promise<UploadInvoiceActionResult> => {
-  const session = await auth();
+export const uploadInvoice = appFormDataAction<
+  {
+    pdfs: File[];
+    extractedText: string;
+  },
+  z.infer<typeof uploadInvoiceSchema>,
+  UploadInvoiceActionResult
+>(
+  async (parsedInput, { user }) => {
+    if (!user?.id) {
+      return emptyUploadResult("missingSession");
+    }
 
-  if (!session?.user?.id) {
-    return emptyUploadResult("missingSession");
-  }
+    const existingUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { id: true },
+    });
 
-  const existingUser = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true },
-  });
+    if (!existingUser) {
+      return emptyUploadResult("staleSession");
+    }
 
-  if (!existingUser) {
-    return emptyUploadResult("staleSession");
-  }
+    const results: UploadInvoiceActionResult["results"] = [];
 
-  const pdfs = formData
-    .getAll("pdf")
-    .filter((value): value is File => value instanceof File && value.size > 0);
+    for (const pdf of parsedInput.pdfs) {
+      results.push(
+        await uploadSingleInvoice({
+          pdf,
+          extractedText: parsedInput.extractedText?.trim() || null,
+          uploadedById: existingUser.id,
+        }),
+      );
+    }
 
-  if (pdfs.length === 0) {
-    return emptyUploadResult("missingPdf");
-  }
+    revalidatePath("/ru/dashboard");
+    revalidatePath("/uk/dashboard");
+    revalidatePath("/en/dashboard");
 
-  const parsed = uploadInvoiceSchema.safeParse({
-    extractedText: String(formData.get("extractedText") ?? ""),
-  });
+    return {
+      errorKey: null,
+      successCount: results.filter((item) => item.errorKey === null).length,
+      failedCount: results.filter((item) => item.errorKey && item.errorKey !== "duplicateDocument")
+        .length,
+      duplicateCount: results.filter((item) => item.errorKey === "duplicateDocument").length,
+      results,
+    };
+  },
+  {
+    requireAuth: true,
+    prepareInput: (formData) => {
+      const pdfs = formData
+        .getAll("pdf")
+        .filter((value): value is File => value instanceof File && value.size > 0);
 
-  if (!parsed.success) {
-    return emptyUploadResult("invalidInput");
-  }
+      if (pdfs.length === 0) {
+        return abortAction(emptyUploadResult("missingPdf"));
+      }
 
-  const results: UploadInvoiceActionResult["results"] = [];
-
-  for (const pdf of pdfs) {
-    results.push(
-      await uploadSingleInvoice({
-        pdf,
-        extractedText: parsed.data.extractedText?.trim() || null,
-        uploadedById: existingUser.id,
-      }),
-    );
-  }
-
-  revalidatePath("/ru/dashboard");
-  revalidatePath("/uk/dashboard");
-  revalidatePath("/en/dashboard");
-
-  return {
-    errorKey: null,
-    successCount: results.filter((item) => item.errorKey === null).length,
-    failedCount: results.filter((item) => item.errorKey && item.errorKey !== "duplicateDocument")
-      .length,
-    duplicateCount: results.filter((item) => item.errorKey === "duplicateDocument").length,
-    results,
-  };
-};
+      return {
+        ok: true,
+        value: {
+          pdfs,
+          extractedText: String(formData.get("extractedText") ?? ""),
+        },
+      };
+    },
+    schema: uploadInvoiceSchema,
+    onUnauthorized: () => emptyUploadResult("missingSession"),
+    onInvalidInput: () => emptyUploadResult("invalidInput"),
+  },
+);
 
 export const deleteDocument = async ({
   documentId,
@@ -119,48 +134,53 @@ export const deleteDocument = async ({
 }: {
   documentId: number;
   locale: string;
-}): Promise<DeleteDocumentActionResult> => {
-  const session = await auth();
+}): Promise<DeleteDocumentActionResult> =>
+  appAction<
+    z.input<typeof deleteDocumentSchema>,
+    z.infer<typeof deleteDocumentSchema>,
+    DeleteDocumentActionResult
+  >(
+    async (parsedInput) => {
+      if (!routing.locales.includes(parsedInput.locale as AppLocale)) {
+        return { errorKey: "invalidInput", success: false };
+      }
 
-  if (!session?.user?.id) {
-    return { errorKey: "missingSession", success: false };
-  }
+      try {
+        const document = await prisma.document.findUnique({
+          where: { id: parsedInput.documentId },
+          select: {
+            id: true,
+            sourceFilePath: true,
+          },
+        });
 
-  const parsed = deleteDocumentSchema.safeParse({ documentId, locale });
+        if (!document) {
+          return { errorKey: "notFound", success: false };
+        }
 
-  if (!parsed.success || !routing.locales.includes(parsed.data.locale as AppLocale)) {
-    return { errorKey: "invalidInput", success: false };
-  }
+        await prisma.document.delete({
+          where: { id: document.id },
+        });
 
-  try {
-    const document = await prisma.document.findUnique({
-      where: { id: parsed.data.documentId },
-      select: {
-        id: true,
-        sourceFilePath: true,
-      },
-    });
+        if (document.sourceFilePath) {
+          await deleteUploadedFile(document.sourceFilePath);
+        }
 
-    if (!document) {
-      return { errorKey: "notFound", success: false };
-    }
+        revalidatePath(`/${parsedInput.locale}/dashboard`);
+        revalidatePath(`/${parsedInput.locale}/dashboard/documents/${document.id}`);
 
-    await prisma.document.delete({
-      where: { id: document.id },
-    });
-
-    if (document.sourceFilePath) {
-      await deleteUploadedFile(document.sourceFilePath);
-    }
-
-    revalidatePath(`/${parsed.data.locale}/dashboard`);
-    revalidatePath(`/${parsed.data.locale}/dashboard/documents/${document.id}`);
-
-    return { errorKey: null, success: true };
-  } catch {
-    return { errorKey: "deleteFailed", success: false };
-  }
-};
+        return { errorKey: null, success: true };
+      } catch {
+        return { errorKey: "deleteFailed", success: false };
+      }
+    },
+    {
+      requireAuth: true,
+      schema: deleteDocumentSchema,
+      onUnauthorized: () => ({ errorKey: "missingSession", success: false }),
+      onInvalidInput: () => ({ errorKey: "invalidInput", success: false }),
+    },
+  )({ documentId, locale });
 
 const parseDocumentDate = (value: string): Date => {
   const [day, month, year] = value.split(".");

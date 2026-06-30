@@ -8,11 +8,18 @@ import {
 import type { PublicationIssueMappingRow } from "@/lib/publication-mappings/types";
 
 describe("buildSavedMappingRows", () => {
-  it("builds rows by max saved side length and fills missing cells with null", () => {
+  it("builds rows from saved publication mappings only", () => {
     const rows = buildSavedMappingRows({
       parsedPublicationName: "Локальное издание",
       parsedIssueNumber: "04-26",
       publicationMappings: [
+        {
+          id: 1,
+          sourceCode: "idz-ukr",
+          sourceDisplayName: "IDZ-UKR",
+          externalEditionId: 10,
+          externalEditionName: "А",
+        },
         {
           id: 2,
           sourceCode: "idz-ukr",
@@ -21,29 +28,12 @@ describe("buildSavedMappingRows", () => {
           externalEditionName: "Б",
         },
       ],
-      issueNumberMappings: [
-        {
-          id: 11,
-          sourceCode: "idz-ukr",
-          sourceDisplayName: "IDZ-UKR",
-          externalIssueId: 101,
-          externalIssueNumber: "03-26",
-        },
-        {
-          id: 12,
-          sourceCode: "idz-ukr",
-          sourceDisplayName: "IDZ-UKR",
-          externalIssueId: 102,
-          externalIssueNumber: "04-26",
-        },
-      ],
     });
 
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.savedPublicationMapping?.externalEditionName).toBe("Б");
-    expect(rows[0]?.savedIssueNumberMapping?.externalIssueNumber).toBe("03-26");
-    expect(rows[1]?.savedPublicationMapping).toBeNull();
-    expect(rows[1]?.savedIssueNumberMapping?.externalIssueNumber).toBe("04-26");
+    expect(rows[0]?.savedPublicationMapping?.externalEditionName).toBe("А");
+    expect(rows[0]).not.toHaveProperty("savedIssueNumberMapping");
+    expect(rows[1]?.savedPublicationMapping?.externalEditionName).toBe("Б");
   });
 });
 
@@ -68,13 +58,6 @@ describe("collectSelectionIdsFromRows", () => {
           externalEditionId: 20,
           externalEditionName: "А",
         },
-        savedIssueNumberMapping: {
-          id: 2,
-          sourceCode: "idz-ukr",
-          sourceDisplayName: "IDZ-UKR",
-          externalIssueId: 101,
-          externalIssueNumber: "04-26",
-        },
         draftPublicationSelection: null,
         draftIssueSelection: null,
       },
@@ -93,7 +76,6 @@ describe("collectSelectionIdsFromRows", () => {
 
     expect(collectSelectionIdsFromRows(rows)).toEqual({
       publicationSelectionIds: [20],
-      issueSelectionIds: [101, 102],
     });
   });
 });

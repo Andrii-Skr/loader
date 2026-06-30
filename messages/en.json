@@ -173,6 +173,14 @@
     "savePending": "Saving...",
     "emptyPublicationCandidates": "No publication candidates found. Try a broader search.",
     "emptyIssueNumberCandidates": "No issue number candidates found. Try a broader search.",
+    "tooltip": {
+      "title": "Parsed pair",
+      "documentNumberLabel": "Document number",
+      "rawDataLabel": "PDF column value",
+      "occurrenceSummary": "Showing {shown} of {total}",
+      "loadMore": "Show all",
+      "loadMorePending": "Loading..."
+    },
     "filters": {
       "all": "All",
       "matched": "Matched",

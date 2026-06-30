@@ -4,6 +4,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { startTransition, useEffect, useState } from "react";
 
 import { useTheme } from "@/components/providers/theme-provider";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 
@@ -85,20 +86,27 @@ export function HeaderControls({
               : value === "system";
 
             return (
-              <button
-                aria-label={themeLabels[value]}
-                aria-pressed={isCurrentTheme}
-                className={cn(
-                  "header-control__chip header-control__chip--icon",
-                  isCurrentTheme && "header-control__chip--active",
-                )}
-                key={value}
-                onClick={() => setTheme(value)}
-                title={themeLabels[value]}
-                type="button"
-              >
-                <Icon />
-              </button>
+              <TooltipProvider key={value}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      aria-label={themeLabels[value]}
+                      aria-pressed={isCurrentTheme}
+                      className={cn(
+                        "header-control__chip header-control__chip--icon",
+                        isCurrentTheme && "header-control__chip--active",
+                      )}
+                      onClick={() => setTheme(value)}
+                      type="button"
+                    >
+                      <Icon />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <span>{themeLabels[value]}</span>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             );
           })}
         </div>

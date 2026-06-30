@@ -37,6 +37,16 @@ type LocalPublicationIssueLookup = {
   };
 };
 
+const scoreIssueNumberFormatQuality = (value: string): number => {
+  let score = 0;
+
+  if (/\/{2,}/u.test(value) || /-{2,}/u.test(value)) {
+    score -= 1;
+  }
+
+  return score;
+};
+
 const mapPublicationMapping = (mapping: {
   id: number;
   source: { code: string; displayName: string };
@@ -199,6 +209,7 @@ export const searchIssueNumberCandidates = async ({
         externalIssueId: issue.id,
         externalIssueNumber: issue.number,
         isExactMatch,
+        formatQuality: scoreIssueNumberFormatQuality(issue.number),
         score: Number(
           Math.max(
             scoreTextSimilarity(normalizedTarget, normalizedCandidate),
@@ -211,6 +222,7 @@ export const searchIssueNumberCandidates = async ({
       (left, right) =>
         Number(right.isExactMatch) - Number(left.isExactMatch) ||
         right.score - left.score ||
+        right.formatQuality - left.formatQuality ||
         right.externalIssueId - left.externalIssueId ||
         left.externalIssueNumber.localeCompare(right.externalIssueNumber, "uk-UA"),
     )

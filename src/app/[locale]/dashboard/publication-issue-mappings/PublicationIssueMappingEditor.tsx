@@ -2,9 +2,18 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import {
+  loadPublicationIssueOccurrences,
   searchIssueNumberMappingCandidates,
   searchPublicationMappingCandidates,
 } from "@/app/actions/publication-issue-mappings";
@@ -18,20 +27,25 @@ import {
   collectSelectionIdsFromRows,
   createDraftMappingRow,
 } from "@/lib/publication-mappings/editor";
+import {
+  getOccurrenceDocumentLabel,
+  getOccurrenceRawText,
+} from "@/lib/publication-mappings/tooltip";
 import type {
   IssueNumberCandidateDto,
   LoadPublicationIssueEditorData,
   PublicationCandidateDto,
+  PublicationIssueDocumentOccurrence,
   PublicationIssueMappingRow,
   PublicationIssueRegistryItem,
 } from "@/lib/publication-mappings/types";
 
 export type PublicationIssueMappingEditorHandle = {
   getSelections: () => {
+    publicationIssueId: number;
     publicationId: number;
-    issueNumberId: number;
+    hasConfirmedIssue: boolean;
     publicationSelectionIds: number[];
-    issueSelectionIds: number[];
   };
 };
 
@@ -87,9 +101,8 @@ const buildInitialRows = ({
   const initialIssueNumberCandidate = pickInitialIssueCandidate(issueNumberCandidates);
   const savedRows = buildSavedMappingRows({
     parsedPublicationName: selectedItem.publicationName,
-    parsedIssueNumber: selectedItem.canonicalIssueNumber,
+    parsedIssueNumber: selectedItem.parsedIssueNumber,
     publicationMappings: selectedItem.publicationMappings,
-    issueNumberMappings: selectedItem.issueNumberMappings,
   });
 
   if (savedRows.length === 0) {
@@ -97,7 +110,7 @@ const buildInitialRows = ({
       {
         ...createDraftMappingRow({
           parsedPublicationName: selectedItem.publicationName,
-          parsedIssueNumber: selectedItem.canonicalIssueNumber,
+          parsedIssueNumber: selectedItem.parsedIssueNumber,
           rowId: `base-${selectedItem.publicationIssueId}`,
         }),
         draftPublicationSelection: initialPublicationCandidate
@@ -125,13 +138,12 @@ const buildInitialRows = ({
             externalEditionName: initialPublicationCandidate.externalEditionName,
           }
         : null,
-    draftIssueSelection:
-      row.savedIssueNumberMapping === null && initialIssueNumberCandidate
-        ? {
-            externalIssueId: initialIssueNumberCandidate.externalIssueId,
-            externalIssueNumber: initialIssueNumberCandidate.externalIssueNumber,
-          }
-        : null,
+    draftIssueSelection: initialIssueNumberCandidate
+      ? {
+          externalIssueId: initialIssueNumberCandidate.externalIssueId,
+          externalIssueNumber: initialIssueNumberCandidate.externalIssueNumber,
+        }
+      : row.draftIssueSelection,
   }));
 };
 
@@ -188,7 +200,7 @@ export const PublicationIssueMappingEditor = forwardRef<
       ...currentRows,
       createDraftMappingRow({
         parsedPublicationName: selectedItem.publicationName,
-        parsedIssueNumber: selectedItem.canonicalIssueNumber,
+        parsedIssueNumber: selectedItem.parsedIssueNumber,
         rowId: `draft-${selectedItem.publicationIssueId}-${draftRowCounterRef.current}`,
       }),
     ]);
@@ -219,10 +231,9 @@ export const PublicationIssueMappingEditor = forwardRef<
           return [];
         }
 
-        return [
-          row.savedIssueNumberMapping?.externalIssueId,
-          row.draftIssueSelection?.externalIssueId,
-        ].filter((value): value is number => Number.isInteger(value));
+        return [row.draftIssueSelection?.externalIssueId].filter((value): value is number =>
+          Number.isInteger(value),
+        );
       }),
     );
 
@@ -230,17 +241,17 @@ export const PublicationIssueMappingEditor = forwardRef<
     ref,
     () => ({
       getSelections: () => {
-        const { issueSelectionIds, publicationSelectionIds } = collectSelectionIdsFromRows(rows);
+        const { publicationSelectionIds } = collectSelectionIdsFromRows(rows);
 
         return {
+          publicationIssueId: selectedItem.publicationIssueId,
           publicationId: selectedItem.publicationId,
-          issueNumberId: selectedItem.issueNumberId,
+          hasConfirmedIssue: rows.some((row) => row.draftIssueSelection !== null),
           publicationSelectionIds,
-          issueSelectionIds,
         };
       },
     }),
-    [rows, selectedItem.issueNumberId, selectedItem.publicationId],
+    [rows, selectedItem.publicationId, selectedItem.publicationIssueId],
   );
 
   const renderPublicationCell = (row: PublicationIssueMappingRow) => {
@@ -309,78 +320,81 @@ export const PublicationIssueMappingEditor = forwardRef<
     );
   };
 
-  const renderIssueNumberCell = (row: PublicationIssueMappingRow) => {
-    if (row.savedIssueNumberMapping) {
-      return (
-        <LockedValueCell
-          label={row.savedIssueNumberMapping.externalIssueNumber}
-          onRemove={() =>
-            updateRow(row.rowId, (currentRow) => ({
-              ...currentRow,
-              savedIssueNumberMapping: null,
-            }))
-          }
-          removeLabel={t("removeIssueNumber")}
-        />
-      );
-    }
+  const renderIssueNumberCell = (row: PublicationIssueMappingRow) => (
+    <Combobox
+      contentClassName="w-[min(30rem,max(26rem,var(--radix-popover-trigger-width)))]"
+      excludedValues={getExcludedIssueNumberIds(row.rowId)}
+      initialOptions={issueNumberOptions}
+      messages={{
+        clear: t("clearSelection"),
+        empty: t("emptyIssueNumberCandidates"),
+        searching: t("searchPending"),
+        searchPlaceholder: t("issueNumberSearchPlaceholder"),
+      }}
+      onSearch={async (query) => {
+        const result = await searchIssueNumberMappingCandidates({
+          publicationIssueId: selectedItem.publicationIssueId,
+          locale,
+          query,
+        });
 
-    return (
-      <Combobox
-        contentClassName="w-[min(30rem,max(26rem,var(--radix-popover-trigger-width)))]"
-        excludedValues={getExcludedIssueNumberIds(row.rowId)}
-        initialOptions={issueNumberOptions}
-        messages={{
-          clear: t("clearSelection"),
-          empty: t("emptyIssueNumberCandidates"),
-          searching: t("searchPending"),
-          searchPlaceholder: t("issueNumberSearchPlaceholder"),
-        }}
-        onSearch={async (query) => {
-          const result = await searchIssueNumberMappingCandidates({
-            publicationIssueId: selectedItem.publicationIssueId,
-            locale,
-            query,
-          });
-
-          if (result.errorKey) {
-            setServerMessage(t(`messages.${result.errorKey}`));
-            return [];
-          }
-
-          return result.candidates.map(toIssueNumberOption);
-        }}
-        onSelect={(option) => {
-          updateRow(row.rowId, (currentRow) => ({
-            ...currentRow,
-            draftIssueSelection: option
-              ? {
-                  externalIssueId: option.value,
-                  externalIssueNumber: option.label,
-                }
-              : null,
-          }));
-        }}
-        placeholder={t("issueNumberComboboxPlaceholder")}
-        selectedOption={
-          row.draftIssueSelection
-            ? {
-                value: row.draftIssueSelection.externalIssueId,
-                label: row.draftIssueSelection.externalIssueNumber,
-              }
-            : null
+        if (result.errorKey) {
+          setServerMessage(t(`messages.${result.errorKey}`));
+          return [];
         }
-        widthClassName="min-w-[12rem]"
-      />
-    );
-  };
+
+        return result.candidates.map(toIssueNumberOption);
+      }}
+      onSelect={(option) => {
+        updateRow(row.rowId, (currentRow) => ({
+          ...currentRow,
+          draftIssueSelection: option
+            ? {
+                externalIssueId: option.value,
+                externalIssueNumber: option.label,
+              }
+            : null,
+        }));
+      }}
+      placeholder={t("issueNumberComboboxPlaceholder")}
+      selectedOption={
+        row.draftIssueSelection
+          ? {
+              value: row.draftIssueSelection.externalIssueId,
+              label: row.draftIssueSelection.externalIssueNumber,
+            }
+          : null
+      }
+      widthClassName="min-w-[12rem]"
+    />
+  );
 
   return (
     <>
       {rows.map((row, index) => (
         <TableRow key={row.rowId}>
-          <TableCell>{index === 0 ? selectedItem.publicationName : null}</TableCell>
-          <TableCell>{index === 0 ? selectedItem.canonicalIssueNumber : null}</TableCell>
+          <TableCell>
+            {index === 0 ? (
+              <ParsedValueTooltip
+                label={selectedItem.publicationName}
+                locale={locale}
+                publicationIssueId={selectedItem.publicationIssueId}
+                occurrences={selectedItem.documentOccurrences}
+                occurrenceCount={selectedItem.documentOccurrenceCount}
+              />
+            ) : null}
+          </TableCell>
+          <TableCell>
+            {index === 0 ? (
+              <ParsedValueTooltip
+                label={selectedItem.parsedIssueNumber}
+                locale={locale}
+                publicationIssueId={selectedItem.publicationIssueId}
+                occurrences={selectedItem.documentOccurrences}
+                occurrenceCount={selectedItem.documentOccurrenceCount}
+              />
+            ) : null}
+          </TableCell>
           <TableCell>{renderPublicationCell(row)}</TableCell>
           <TableCell>{renderIssueNumberCell(row)}</TableCell>
           <TableCell className="w-[7.5rem] text-center align-middle">
@@ -407,16 +421,24 @@ export const PublicationIssueMappingEditor = forwardRef<
               </div>
             ) : row.kind === "draft" ? (
               <div className="flex justify-center">
-                <Button
-                  aria-label={t("removeRow")}
-                  onClick={() => removeDraftRow(row.rowId)}
-                  size="icon-sm"
-                  title={t("removeRow")}
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        aria-label={t("removeRow")}
+                        onClick={() => removeDraftRow(row.rowId)}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <span>{t("removeRow")}</span>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             ) : (
               <span />
@@ -435,6 +457,120 @@ export const PublicationIssueMappingEditor = forwardRef<
   );
 });
 
+function ParsedValueTooltip({
+  label,
+  locale,
+  publicationIssueId,
+  occurrences,
+  occurrenceCount,
+}: {
+  label: string;
+  locale: AppLocale;
+  publicationIssueId: number;
+  occurrences: PublicationIssueDocumentOccurrence[];
+  occurrenceCount: number;
+}) {
+  const t = useTranslations("PublicationMappings");
+  const [isLoadingAll, startLoadingAllTransition] = useTransition();
+  const [allOccurrences, setAllOccurrences] = useState(occurrences);
+  const [loadErrorKey, setLoadErrorKey] = useState<string | null>(null);
+  const hiddenOccurrenceCount = Math.max(occurrenceCount - allOccurrences.length, 0);
+
+  useEffect(() => {
+    setAllOccurrences(occurrences);
+    setLoadErrorKey(null);
+  }, [occurrences]);
+
+  const handleLoadAll = () => {
+    startLoadingAllTransition(async () => {
+      setLoadErrorKey(null);
+
+      const result = await loadPublicationIssueOccurrences({
+        locale,
+        publicationIssueId,
+      });
+
+      if (result.errorKey) {
+        setLoadErrorKey(result.errorKey);
+        return;
+      }
+
+      setAllOccurrences(result.occurrences);
+    });
+  };
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            className="max-w-full cursor-help text-left underline decoration-dotted underline-offset-3"
+            type="button"
+          >
+            {label}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-h-80 w-[min(32rem,calc(100vw-2rem))] overflow-y-auto p-3">
+          <div className="grid gap-3">
+            <div className="grid gap-1">
+              <span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
+                {t("tooltip.title")}
+              </span>
+              <span className="text-sm">{label}</span>
+            </div>
+            <div className="grid gap-2">
+              {allOccurrences.map((occurrence, index) => (
+                <div
+                  className="grid gap-1 rounded-[12px] border border-[color:var(--line)] bg-[color:var(--panel)] px-3 py-2"
+                  key={`${occurrence.sourceFileName}-${occurrence.documentNumber ?? "no-doc"}-${index}`}
+                >
+                  <span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
+                    {t("tooltip.documentNumberLabel")}
+                  </span>
+                  <span className="text-sm font-medium">
+                    {getOccurrenceDocumentLabel(occurrence)}
+                  </span>
+                  <span className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
+                    {t("tooltip.rawDataLabel")}
+                  </span>
+                  <span className="whitespace-pre-wrap break-words text-sm">
+                    {getOccurrenceRawText(occurrence)}
+                  </span>
+                </div>
+              ))}
+              {hiddenOccurrenceCount > 0 ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium text-[color:var(--ink-soft)]">
+                    {t("tooltip.occurrenceSummary", {
+                      shown: allOccurrences.length,
+                      total: occurrenceCount,
+                    })}
+                  </span>
+                  <Button
+                    className="h-7"
+                    disabled={isLoadingAll}
+                    onClick={handleLoadAll}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {isLoadingAll ? t("tooltip.loadMorePending") : t("tooltip.loadMore")}
+                  </Button>
+                </div>
+              ) : null}
+              {loadErrorKey ? (
+                <span className="text-xs text-[color:var(--accent-strong)]">
+                  {t(`messages.${loadErrorKey}`)}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function LockedValueCell({
   label,
   onRemove,
@@ -447,16 +583,24 @@ function LockedValueCell({
   return (
     <div className="flex min-h-11 items-start justify-between gap-3 rounded-[18px] border border-[color:var(--line)] bg-[color:var(--panel-strong)] px-3 py-2">
       <span>{label}</span>
-      <Button
-        aria-label={removeLabel}
-        onClick={onRemove}
-        size="icon-xs"
-        title={removeLabel}
-        type="button"
-        variant="ghost"
-      >
-        <Trash2 className="size-3.5" />
-      </Button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              aria-label={removeLabel}
+              onClick={onRemove}
+              size="icon-xs"
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <span>{removeLabel}</span>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   );
 }

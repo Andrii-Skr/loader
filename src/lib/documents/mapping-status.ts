@@ -1,9 +1,9 @@
 export type MappingStatusKey = "unparsed" | "unmatched" | "partiallyMatched" | "fullyMatched";
 
 type MappingCountCarrier = {
+  publicationIssueConfirmedAt: Date | null;
   publicationIssue: {
     publication: { _count: { mappings: number } };
-    issueNumber: { _count: { mappings: number } };
   } | null;
 };
 
@@ -13,17 +13,12 @@ export function getLineItemMappingStatusKey(item: MappingCountCarrier): MappingS
   }
 
   const hasPublicationMappings = item.publicationIssue.publication._count.mappings > 0;
-  const hasIssueNumberMappings = item.publicationIssue.issueNumber._count.mappings > 0;
 
-  if (hasPublicationMappings && hasIssueNumberMappings) {
-    return "fullyMatched";
-  }
-
-  if (!hasPublicationMappings && !hasIssueNumberMappings) {
+  if (!hasPublicationMappings) {
     return "unmatched";
   }
 
-  return "partiallyMatched";
+  return item.publicationIssueConfirmedAt ? "fullyMatched" : "partiallyMatched";
 }
 
 export function getDocumentMappingStatus(items: readonly MappingCountCarrier[]): MappingStatusKey {

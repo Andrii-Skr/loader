@@ -49,20 +49,20 @@ export type PublicationIssueMappingRow = {
   parsedPublicationName: string;
   parsedIssueNumber: string;
   savedPublicationMapping: PublicationMappingDto | null;
-  savedIssueNumberMapping: IssueNumberMappingDto | null;
   draftPublicationSelection: PublicationDraftSelection | null;
   draftIssueSelection: IssueNumberDraftSelection | null;
 };
 
 export type SavePublicationIssueMappingRegistryInput = {
   locale: string;
+  documentId?: number;
   publicationSelections: Array<{
     publicationId: number;
     selectionIds: number[];
   }>;
-  issueSelections: Array<{
-    issueNumberId: number;
-    selectionIds: number[];
+  issueConfirmations: Array<{
+    publicationIssueId: number;
+    hasConfirmedIssue: boolean;
   }>;
 };
 
@@ -71,19 +71,26 @@ export type PublicationIssueMatchSummary = {
   publicationId: number;
   issueNumberId: number;
   publicationName: string;
+  parsedIssueNumber: string;
   canonicalIssueNumber: string;
   publicationMappingCount: number;
-  issueNumberMappingCount: number;
   publicationCandidateCount: number;
   issueNumberCandidateCount: number;
   fullyMatched: boolean;
   publicationMappings: PublicationMappingDto[];
-  issueNumberMappings: IssueNumberMappingDto[];
+};
+
+export type PublicationIssueDocumentOccurrence = {
+  documentNumber: string | null;
+  sourceFileName: string;
+  description: string;
+  rawRowText: string | null;
 };
 
 export type PublicationIssueRegistryItem = PublicationIssueMatchSummary & {
-  sampleDescriptions: string[];
-  documentLabels: string[];
+  hasConfirmedDocumentMatch: boolean;
+  documentOccurrences: PublicationIssueDocumentOccurrence[];
+  documentOccurrenceCount: number;
 };
 
 export type PublicationIssueRegistryFilter = "all" | "matched" | "unmatched" | "document-unmatched";

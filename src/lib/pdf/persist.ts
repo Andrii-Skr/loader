@@ -153,6 +153,7 @@ export const ingestVatInvoice = async ({ documentId, rawText, contour }: IngestV
             lineNo: item.lineNo,
             description: item.description,
             publicationIssueId,
+            publicationIssueConfirmedAt: null,
             sourceRowCode: item.sourceRowCode,
             serviceCode: item.serviceCode,
             itemTypeCode: item.itemTypeCode,

@@ -67,6 +67,7 @@ vi.mock("@/lib/publication-mappings/config", () => ({
 import {
   replaceIssueNumberMappings,
   replacePublicationMappings,
+  searchIssueNumberCandidates,
   searchPublicationCandidates,
 } from "@/lib/publication-mappings/service";
 
@@ -106,6 +107,46 @@ describe("searchPublicationCandidates", () => {
       externalEditionId: 4729,
       externalEditionName: "Кейворди",
       isExactMatch: false,
+    });
+  });
+});
+
+describe("searchIssueNumberCandidates", () => {
+  beforeEach(() => {
+    prismaMocks.publicationIssueFindUnique.mockReset();
+    externalRepositoryMocks.searchExternalIssueNumbers.mockReset();
+  });
+
+  it("prefers issue numbers with a single slash over duplicated slash variants", async () => {
+    prismaMocks.publicationIssueFindUnique.mockResolvedValue({
+      id: 12,
+      publication: {
+        id: 3,
+        displayName: "Копейка. ТВ программа",
+      },
+      issueNumber: {
+        id: 4,
+        canonicalValue: "06/26",
+      },
+    });
+    externalRepositoryMocks.searchExternalIssueNumbers.mockResolvedValue([
+      { id: 10, number: "06//26" },
+      { id: 9, number: "06/26" },
+    ]);
+
+    const candidates = await searchIssueNumberCandidates({
+      publicationIssueId: 12,
+    });
+
+    expect(candidates[0]).toMatchObject({
+      externalIssueId: 9,
+      externalIssueNumber: "06/26",
+      isExactMatch: true,
+    });
+    expect(candidates[1]).toMatchObject({
+      externalIssueId: 10,
+      externalIssueNumber: "06//26",
+      isExactMatch: true,
     });
   });
 });

@@ -235,7 +235,13 @@ const normalizeIssueNumber = (value: string): string => {
     .replace(/\s*\/\s*укр\.?\s*\/?\s*$/iu, "")
     .replace(/\s*[AАBВ]\d+\s*$/iu, "");
   const withoutMarker = withoutLocaleTail.replace(/^№\s*/u, "");
-  const normalizedSlashSuffix = withoutMarker.replace(/^(.+?)\/\s*([^/]+?)\s*\/$/u, "$1 ($2)");
+  const withoutDanglingQuotes = withoutMarker
+    .replace(/^["«„“]\s*/u, "")
+    .replace(/\s*["»“”]\s*$/u, "");
+  const normalizedSlashSuffix = withoutDanglingQuotes.replace(
+    /^(.+?)\/\s*([^/]+?)\s*\/$/u,
+    "$1 ($2)",
+  );
   const withoutCommaTail = normalizedSlashSuffix.replace(/,.*$/u, "");
   const withoutTrailingGarbage = withoutCommaTail.replace(/[\s.,;:]+$/u, "");
 

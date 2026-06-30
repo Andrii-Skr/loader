@@ -213,6 +213,81 @@ describe("parseVatInvoiceRuV1", () => {
       lineTotalAmount: "244200.00",
     });
   });
+
+  it("keeps issue digits attached to RU descriptions without a space before the issue marker", () => {
+    const parsed = parseVatInvoiceRuV1(`Универсальный передаточный документ Статус: 1
+Счет-фактура № 511 от 7 февраля 2026 г.
+Продавец Общество с ограниченной ответственностью "Кубаньпечать" (2)
+Адрес 350010, Краснодарский край (2а)
+ИНН/КПП продавца 2310044604/231001001 (2б)
+Покупатель ООО Издательский дом "Семейная пресса" (6)
+Адрес Донецк (6а)
+ИНН/КПП покупателя 9309026071/930901001 (6б)
+А 1 1а 1б 2 2а 3 4 5 6 7 8 9 10 10а 11
+- 1 Печать"Кузя и друзья"№ 3 - 796 шт 1000 10.00 10 000.00 без акциза 22% 2 200.00 12 200.00 - - -
+Всего к оплате 10 000.00 Х 2 200.00 12 200.00`);
+
+    expect(parsed.lineItems).toHaveLength(1);
+    expect(parsed.lineItems[0]).toMatchObject({
+      description: 'Печать"Кузя и друзья"№ 3',
+      itemTypeCode: null,
+    });
+    expect(
+      parsePublicationIssueDescriptionRuV1(parsed.lineItems[0]?.description ?? "", "07.02.2026"),
+    ).toEqual({
+      publicationName: "Кузя и друзья",
+      rawIssueNumber: "3",
+      canonicalIssueNumber: "03-26",
+    });
+  });
+
+  it("normalizes broken inner quotes in RU publication titles", () => {
+    const parsed = parseVatInvoiceRuV1(`Универсальный передаточный документ Статус: 1
+Счет-фактура № 1228 от 27 марта 2026 г.
+Продавец Общество с ограниченной ответственностью "Кубаньпечать" (2)
+Адрес 350010, Краснодарский край (2а)
+ИНН/КПП продавца 2310044604/231001001 (2б)
+Покупатель ООО Издательский дом "Семейная пресса" (6)
+Адрес Донецк (6а)
+ИНН/КПП покупателя 9309026071/930901001 (6б)
+А 1 1а 1б 2 2а 3 4 5 6 7 8 9 10 10а 11
+- 1 Печать "Толстый зять"Кейворды№ 3 - 796 шт 1000 10.00 10 000.00 без акциза 22% 2 200.00 12 200.00 - - -
+Всего к оплате 10 000.00 Х 2 200.00 12 200.00`);
+
+    expect(parsed.lineItems).toHaveLength(1);
+    expect(parsed.lineItems[0]).toMatchObject({
+      description: 'Печать "Толстый зять"Кейворды№ 3',
+      itemTypeCode: null,
+    });
+    expect(
+      parsePublicationIssueDescriptionRuV1(parsed.lineItems[0]?.description ?? "", "27.03.2026"),
+    ).toEqual({
+      publicationName: "Толстый зять Кейворды",
+      rawIssueNumber: "3",
+      canonicalIssueNumber: "03-26",
+    });
+  });
+
+  it("extracts an alphanumeric RU invoice number from UPD headers", () => {
+    const parsed = parseVatInvoiceRuV1(`Универсальный передаточный документ Статус: 1
+Счет-фактура № ДБ-004230001 от 23 апреля 2026 г.
+Продавец Общество с ограниченной ответственностью "ТИПОГРАФСКИЙ КОМПЛЕКС "ДЕВИЗ" (2)
+Адрес 190020, Город Санкт-Петербург (2а)
+ИНН/КПП продавца 7801159356/783801001 (2б)
+Покупатель ООО "ИД "СЕМЕЙНАЯ ПРЕССА" (6)
+Адрес Донецк (6а)
+ИНН/КПП покупателя 9309026071/930901001 (6б)
+А 1 1а 1б 2 2а 3 4 5 6 7 8 9 10 10а 11
+У000027486 1 Полиграфические работы по печати Журнала «Карамельки» №6/1 Спецвыпуск «Календарь для школьника» - 796 шт 5000.000 26.23 131 147.54 без акциза 22% 28 852.46 160 000.00 - - -
+Всего к оплате 131 147.54 Х 28 852.46 160 000.00`);
+
+    expect(parsed.documentType).toBe("Счет-фактура");
+    expect(parsed.documentNumber).toBe("ДБ-004230001");
+    expect(parsed.documentDate).toBe("23.04.2026");
+    expect(parsed.supplier.taxId).toBe("7801159356");
+    expect(parsed.recipient.taxId).toBe("9309026071");
+    expect(parsed.lineItems).toHaveLength(1);
+  });
 });
 
 describe("parseVatInvoiceUaV1", () => {
@@ -467,6 +542,78 @@ describe("parsePublicationIssueDescription", () => {
     });
   });
 
+  it("removes RU technical print annotations and order markers from the issue number", () => {
+    expect(
+      parsePublicationIssueDescriptionRuV1(
+        'Типографские работы по печати журнала "Любимая Теща. Кейворды" №10-26 (ф.А5, пол.64+4,обл.4+4, вн.блок 1+1) (заказ 526)',
+        documentDate,
+      ),
+    ).toEqual({
+      publicationName: "Любимая Тёща. Кейворды",
+      rawIssueNumber: "10-26",
+      canonicalIssueNumber: "10-26",
+    });
+
+    expect(
+      parsePublicationIssueDescriptionRuV1(
+        'Типографские работы по печати журнала "Любимая Теща. Кейворды" №16-26 (16 А4, 4+1) (заказ 541)',
+        documentDate,
+      ),
+    ).toEqual({
+      publicationName: "Любимая Тёща. Кейворды",
+      rawIssueNumber: "16-26",
+      canonicalIssueNumber: "16-26",
+    });
+  });
+
+  it("normalizes yo in RU publication titles", () => {
+    expect(parsePublicationIssueDescriptionRuV1("Любимая Теща. Филворды №4", documentDate)).toEqual(
+      {
+        publicationName: "Любимая Тёща. Филворды",
+        rawIssueNumber: "4",
+        canonicalIssueNumber: "04-26",
+      },
+    );
+  });
+
+  it("strips the RU publication prefix for edition labels", () => {
+    expect(
+      parsePublicationIssueDescriptionRuV1('Издание "Истинное здоровье №7', documentDate),
+    ).toEqual({
+      publicationName: "Истинное здоровье",
+      rawIssueNumber: "7",
+      canonicalIssueNumber: "07-26",
+    });
+  });
+
+  it("strips the RU print prefix", () => {
+    expect(
+      parsePublicationIssueDescriptionRuV1('Печать "Любимая Тёща. Кейворды" №10-26', documentDate),
+    ).toEqual({
+      publicationName: "Любимая Тёща. Кейворды",
+      rawIssueNumber: "10-26",
+      canonicalIssueNumber: "10-26",
+    });
+  });
+
+  it("strips the RU print prefix without a space before quotes", () => {
+    expect(parsePublicationIssueDescriptionRuV1('Печать"Кузя и друзья"№ 3', documentDate)).toEqual({
+      publicationName: "Кузя и друзья",
+      rawIssueNumber: "3",
+      canonicalIssueNumber: "03-26",
+    });
+  });
+
+  it("removes dangling quote tails and parses bracketed RU issue markers", () => {
+    expect(
+      parsePublicationIssueDescriptionRuV1("Газета «Копейка. ТВ программа» (№13)", documentDate),
+    ).toEqual({
+      publicationName: "Копейка. ТВ программа",
+      rawIssueNumber: "13",
+      canonicalIssueNumber: "13-26",
+    });
+  });
+
   it("keeps issue text with bracketed suffix", () => {
     expect(
       parsePublicationIssueDescription(
@@ -477,6 +624,19 @@ describe("parsePublicationIssueDescription", () => {
       publicationName: "Філворди. Спецвипуск (р)",
       rawIssueNumber: "4-26 (саморобки)",
       canonicalIssueNumber: "04-26 (саморобки)",
+    });
+  });
+
+  it("keeps a named special-issue suffix and appends the tax year", () => {
+    expect(
+      parsePublicationIssueDescription(
+        'ж-л "Кейворди.Спецвипуск №4 (Ключвордія)" *64 стр А5',
+        documentDate,
+      ),
+    ).toEqual({
+      publicationName: "Кейворди.Спецвипуск",
+      rawIssueNumber: "4 (Ключвордія)",
+      canonicalIssueNumber: "04-26 (Ключвордія)",
     });
   });
 

@@ -70,28 +70,61 @@ const captureNamedBlock = (
 
 const stripRuPublicationPrefix = (value: string): string =>
   value
+    .replace(/^типографские\s+работы\s+по\s+печати\s+/iu, "")
+    .replace(/^печать\s*/iu, "")
     .replace(/^услуга\s+по\s+печати\s+/iu, "")
     .replace(/^журнала\s+/iu, "")
     .replace(/^журнал\s+/iu, "")
+    .replace(/^издание\s+/iu, "")
     .replace(/^газеты\s+/iu, "")
     .replace(/^газета\s+/iu, "")
     .trim();
 
-const normalizeRuPublicationName = (value: string): string =>
+const isRuTechnicalIssueAnnotation = (value: string): boolean => {
+  if (/заказ/iu.test(value)) {
+    return true;
+  }
+
+  const hasFormatMarker =
+    /ф\.?\s*[AА]\d+/iu.test(value) || /\d+\s*[AА]\d+/iu.test(value) || /[AА]\d+/iu.test(value);
+  const hasPrintSpec =
+    /\d+\+\d+/u.test(value) ||
+    /\bпол\.?/iu.test(value) ||
+    /\bобл\.?/iu.test(value) ||
+    /\bвн\.?\s*блок\b/iu.test(value);
+
+  return hasFormatMarker && hasPrintSpec;
+};
+
+const stripRuTechnicalIssueAnnotations = (value: string): string =>
   normalizeSpaces(
-    stripRuPublicationPrefix(value)
-      .replace(/\s*\/\s*рус\.?\s*$/iu, "")
-      .replace(/\s*\/\s*ru\s*$/iu, "")
-      .replace(/\s*\/\s*$/u, ""),
-  )
-    .replace(/^["«„“]\s*/u, "")
-    .replace(/\s*["»“”]\s*$/u, "")
-    .trim();
+    value.replace(/\(([^()]*)\)/gu, (match, inner: string) =>
+      isRuTechnicalIssueAnnotation(inner) ? "" : match,
+    ),
+  );
+
+const normalizeRuYo = (value: string): string => value.replace(/Теща/gu, "Тёща");
+
+const normalizeRuPublicationName = (value: string): string =>
+  normalizeRuYo(
+    normalizeSpaces(
+      stripRuPublicationPrefix(value)
+        .replace(/\s*\/\s*рус\.?\s*$/iu, "")
+        .replace(/\s*\/\s*ru\s*$/iu, "")
+        .replace(/\s*\/\s*$/u, "")
+        .replace(/([\p{L}\d])\s*["«„“»”]\s*(?=[\p{L}\d])/gu, "$1 "),
+    )
+      .replace(/^["«„“]\s*/u, "")
+      .replace(/\s*["»“”]\s*\(?\s*$/u, "")
+      .trim(),
+  );
 
 const normalizeRuIssueNumber = (value: string): string =>
   normalizeSpaces(
-    value
+    stripRuTechnicalIssueAnnotations(value)
+      .replace(/^\(\s*№\s*/u, "")
       .replace(/^№\s*/u, "")
+      .replace(/\s*\)\s*$/u, "")
       .replace(/\s*\/\s*рус\.?\s*\/?\s*$/iu, "")
       .replace(/\s*\/\s*ru\s*\/?\s*$/iu, "")
       .replace(/[\s.,;:]+$/u, ""),
@@ -133,10 +166,11 @@ const normalizeExciseAmount = (value: string): string | null => {
   return normalizeMoney(normalized);
 };
 
-const isRuRowSourceCode = (token: string): boolean => /^(?:БП-[^\s]+|\d{8})$/u.test(token);
+const isRuRowSourceCode = (token: string): boolean =>
+  /^(?:БП-[^\s]+|[A-ZА-ЯЁ]{0,3}\d{8,})$/iu.test(token);
 
 const RU_ROW_START_REGEX =
-  /(?:^|\s)(-\s+[1-9]\d?\s+(?:\d+\s+)?[\p{L}"«„“]|(?:БП-[^\s]+|\d{8})\s+[1-9]\d?\s+(?:\d+\s+)?[\p{L}"«„“])/gu;
+  /(?:^|\s)(-\s+[1-9]\d?\s+(?:\d+\s+)?[\p{L}"«„“]|(?:БП-[^\s]+|[A-ZА-ЯЁ]{0,3}\d{8,})\s+[1-9]\d?\s+(?:\d+\s+)?[\p{L}"«„“])/giu;
 
 const splitRuTableRows = (tableSection: string): string[] => {
   const starts = Array.from(tableSection.matchAll(RU_ROW_START_REGEX), (match) => {
@@ -258,7 +292,7 @@ const parseRuLineItemRow = (rowText: string): ParsedLineItem | null => {
 
   let description = normalizeSpaces(tokens.join(" ")).replace(/\s+-$/u, "").trim();
 
-  if (itemTypeCode && /^\d+(?:[./-]\d+)*$/u.test(itemTypeCode) && /\s№$/u.test(description)) {
+  if (itemTypeCode && /^\d+(?:[./-]\d+)*$/u.test(itemTypeCode) && /№$/u.test(description)) {
     description = `${description} ${itemTypeCode}`.trim();
     itemTypeCode = null;
   }
@@ -365,7 +399,7 @@ export const parseVatInvoiceRuV1 = (rawText: string): ParsedVatInvoice => {
   }
 
   const headerMatch = text.match(
-    /(Счет-фактура)\s*№\s*([0-9]+)\s+от\s+(\d{1,2}\s+[а-яё]+\s+\d{4}\s+г\.)/iu,
+    /(Счет-фактура)\s*№\s*([0-9a-zа-яё./-]+)\s+от\s+(\d{1,2}\s+[а-яё]+\s+\d{4}\s+г\.)/iu,
   );
 
   if (!headerMatch?.[1] || !headerMatch[2] || !headerMatch[3]) {

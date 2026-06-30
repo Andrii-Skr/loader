@@ -27,6 +27,31 @@ describe("edition ranking primitives", () => {
 
     expect(specificScore).toBeGreaterThan(genericScore);
   });
+
+  it("prefers a close inflection over an unrelated title", () => {
+    const target = "Саморобка";
+    const closeInflectionScore = scoreTextSimilarity(target, "Саморобки");
+    const unrelatedScore = scoreTextSimilarity(target, "Кейвордія");
+
+    expect(closeInflectionScore).toBeGreaterThan(unrelatedScore);
+  });
+
+  it("keeps a minor typo closer than a different word", () => {
+    const target = "Кейворди";
+    const typoScore = scoreTextSimilarity(target, "Кейвордии");
+    const unrelatedScore = scoreTextSimilarity(target, "Філворди");
+
+    expect(typoScore).toBeGreaterThan(unrelatedScore);
+  });
+
+  it("tolerates an accidental repeated letter in a mixed-script title", () => {
+    const target = "Гіігантский слон";
+    const repeatedLetterScore = scoreTextSimilarity(target, "Гигантский Слон");
+    const unrelatedScore = scoreTextSimilarity(target, "Банзай");
+
+    expect(repeatedLetterScore).toBeGreaterThan(0.85);
+    expect(repeatedLetterScore).toBeGreaterThan(unrelatedScore);
+  });
 });
 
 describe("issue ranking primitives", () => {
@@ -53,5 +78,23 @@ describe("issue ranking primitives", () => {
 
     expect(sameYearScore).toBeGreaterThan(plainScore);
     expect(plainScore).toBeGreaterThan(fractionalScore);
+  });
+
+  it("prefers a close label inflection over a different label for the same issue number", () => {
+    const target = "05-26 (саморобка)";
+
+    const closeInflectionScore = scoreIssueSimilarity(target, "05-26(Саморобки)");
+    const differentLabelScore = scoreIssueSimilarity(target, "05-26(Кейвордія)");
+
+    expect(closeInflectionScore).toBeGreaterThan(differentLabelScore);
+  });
+
+  it("penalizes an extra label when the target issue has no label", () => {
+    const target = "05-26";
+
+    const plainScore = scoreIssueSimilarity(target, "05-26");
+    const extraLabelScore = scoreIssueSimilarity(target, "05-26(Саморобки)");
+
+    expect(plainScore).toBeGreaterThan(extraLabelScore);
   });
 });
