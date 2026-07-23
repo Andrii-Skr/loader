@@ -30,7 +30,8 @@ export type IssueNumberCandidateDto = {
 
 export type LoadPublicationIssueEditorData = {
   publicationCandidates: PublicationCandidateDto[];
-  issueNumberCandidates: IssueNumberCandidateDto[];
+  autoSelectedPublicationCandidateId: number | null;
+  initialIssueNumberCandidatesByEditionId: Record<number, IssueNumberCandidateDto[]>;
 };
 
 export type PublicationDraftSelection = {
@@ -41,6 +42,58 @@ export type PublicationDraftSelection = {
 export type IssueNumberDraftSelection = {
   externalIssueId: number;
   externalIssueNumber: string;
+};
+
+export type DocumentIssueMatchDto = {
+  externalEditionId: number;
+  externalEditionName?: string;
+  externalIssueId: number;
+  externalIssueNumber: string;
+};
+
+export type DocumentExternalMatchDetailDto = {
+  externalEditionId: number;
+  externalEditionName: string;
+  externalIssueId: number | null;
+  externalIssueNumber: string | null;
+  quantity: string;
+  unitPrice: string | null;
+  lineBaseAmount: string | null;
+  lineVatAmount: string | null;
+  lineTotalAmount: string | null;
+  currency: string;
+  isPrimary: boolean;
+};
+
+export type DocumentLineAllocationDto = {
+  specialDocumentId: number;
+  lineNo: number;
+  description: string;
+  publicationIssueId: number | null;
+  quantity: string;
+  unitPrice: string;
+  vatRate: string | null;
+  lineBaseAmount: string;
+  lineVatAmount: string;
+  lineTotalAmount: string | null;
+  currency: string;
+  allocations: DocumentExternalMatchDetailDto[];
+};
+
+export type SaveDocumentLineAllocationsInput = {
+  locale: string;
+  documentId: number;
+  allocations: Array<{
+    specialDocumentId: number;
+    matchDetails: Array<{
+      externalEditionId: number;
+      externalEditionName: string;
+      externalIssueId: number;
+      externalIssueNumber: string;
+      quantity: string;
+      unitPrice: string;
+    }>;
+  }>;
 };
 
 export type PublicationIssueMappingRow = {
@@ -60,9 +113,10 @@ export type SavePublicationIssueMappingRegistryInput = {
     publicationId: number;
     selectionIds: number[];
   }>;
-  issueConfirmations: Array<{
+  issueMatches: Array<{
     publicationIssueId: number;
-    hasConfirmedIssue: boolean;
+    matchDetails?: DocumentExternalMatchDetailDto[];
+    matchedIssue: DocumentIssueMatchDto | null;
   }>;
 };
 
@@ -91,6 +145,10 @@ export type PublicationIssueRegistryItem = PublicationIssueMatchSummary & {
   hasConfirmedDocumentMatch: boolean;
   documentOccurrences: PublicationIssueDocumentOccurrence[];
   documentOccurrenceCount: number;
+  hasMultipleDocumentIssueMatches: boolean;
+  documentIssueMatchCount: number;
+  savedDocumentIssueMatch: DocumentIssueMatchDto | null;
+  savedDocumentIssueMatchDetails: DocumentExternalMatchDetailDto[];
 };
 
 export type PublicationIssueRegistryFilter = "all" | "matched" | "unmatched" | "document-unmatched";

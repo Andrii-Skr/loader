@@ -4,6 +4,8 @@ import {
   buildSavedMappingRows,
   collectSelectionIdsFromRows,
   createDraftMappingRow,
+  getRowExternalEditionId,
+  syncIssueSelectionWithCandidates,
 } from "@/lib/publication-mappings/editor";
 import type { PublicationIssueMappingRow } from "@/lib/publication-mappings/types";
 
@@ -76,6 +78,79 @@ describe("collectSelectionIdsFromRows", () => {
 
     expect(collectSelectionIdsFromRows(rows)).toEqual({
       publicationSelectionIds: [20],
+    });
+  });
+});
+
+describe("getRowExternalEditionId", () => {
+  it("prefers saved mapping edition id and falls back to draft selection", () => {
+    expect(
+      getRowExternalEditionId({
+        rowId: "saved-1",
+        kind: "saved",
+        parsedPublicationName: "Локальное издание",
+        parsedIssueNumber: "04-26",
+        savedPublicationMapping: {
+          id: 1,
+          sourceCode: "idz-ukr",
+          sourceDisplayName: "IDZ-UKR",
+          externalEditionId: 10,
+          externalEditionName: "А",
+        },
+        draftPublicationSelection: {
+          externalEditionId: 20,
+          externalEditionName: "Б",
+        },
+        draftIssueSelection: null,
+      }),
+    ).toBe(10);
+
+    expect(
+      getRowExternalEditionId({
+        rowId: "draft-1",
+        kind: "draft",
+        parsedPublicationName: "Локальное издание",
+        parsedIssueNumber: "04-26",
+        savedPublicationMapping: null,
+        draftPublicationSelection: {
+          externalEditionId: 20,
+          externalEditionName: "Б",
+        },
+        draftIssueSelection: null,
+      }),
+    ).toBe(20);
+  });
+});
+
+describe("syncIssueSelectionWithCandidates", () => {
+  it("clears issue selection when it is not allowed by the selected edition", () => {
+    expect(
+      syncIssueSelectionWithCandidates({
+        candidates: [
+          { externalIssueId: 101, externalIssueNumber: "04-26", isExactMatch: true, score: 1 },
+        ],
+        selection: {
+          externalIssueId: 202,
+          externalIssueNumber: "05-26",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps issue selection when it remains valid", () => {
+    expect(
+      syncIssueSelectionWithCandidates({
+        candidates: [
+          { externalIssueId: 101, externalIssueNumber: "04-26", isExactMatch: true, score: 1 },
+        ],
+        selection: {
+          externalIssueId: 101,
+          externalIssueNumber: "04-26",
+        },
+      }),
+    ).toEqual({
+      externalIssueId: 101,
+      externalIssueNumber: "04-26",
     });
   });
 });

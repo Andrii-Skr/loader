@@ -1,3 +1,4 @@
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   getExternalEditionSchema,
@@ -10,7 +11,7 @@ import {
   getExternalEditionsByIds,
   getExternalIssueNumbersByIds,
   searchExternalEditions,
-  searchExternalIssueNumbers,
+  searchExternalIssueNumbersByEdition,
 } from "@/lib/publication-mappings/external-repository";
 import {
   normalizeIssueLookupText,
@@ -109,6 +110,90 @@ const ensureExternalEditionSource = async () =>
     },
   });
 
+export type PreparedPublicationMappingReplacement = {
+  publicationId: number;
+  externalEditions: Array<{
+    externalEditionId: number;
+    externalEditionName: string;
+  }>;
+};
+
+export const preparePublicationMappingReplacement = async ({
+  publicationId,
+  selections,
+}: {
+  publicationId: number;
+  selections: Array<{ externalEditionId: number }>;
+}): Promise<PreparedPublicationMappingReplacement> => {
+  const uniqueSelections = Array.from(
+    new Map(selections.map((selection) => [selection.externalEditionId, selection])).values(),
+  );
+  const editionRows = await getExternalEditionsByIds(
+    uniqueSelections.map((selection) => selection.externalEditionId),
+  );
+  const editionById = new Map(editionRows.map((edition) => [edition.id, edition]));
+
+  return {
+    publicationId,
+    externalEditions: uniqueSelections.flatMap((selection) => {
+      const edition = editionById.get(selection.externalEditionId);
+
+      return edition
+        ? [
+            {
+              externalEditionId: edition.id,
+              externalEditionName: edition.name,
+            },
+          ]
+        : [];
+    }),
+  };
+};
+
+export const applyPublicationMappingReplacements = async ({
+  replacements,
+  tx,
+}: {
+  replacements: PreparedPublicationMappingReplacement[];
+  tx: Prisma.TransactionClient;
+}) => {
+  if (replacements.length === 0) {
+    return;
+  }
+
+  const source = await tx.externalEditionSource.upsert({
+    where: { code: getExternalEditionSourceCode() },
+    update: {
+      displayName: getExternalEditionSourceName(),
+      schemaName: getExternalEditionSchema(),
+    },
+    create: {
+      code: getExternalEditionSourceCode(),
+      displayName: getExternalEditionSourceName(),
+      schemaName: getExternalEditionSchema(),
+    },
+  });
+
+  for (const replacement of replacements) {
+    await tx.publicationMapping.deleteMany({
+      where: {
+        publicationId: replacement.publicationId,
+        sourceId: source.id,
+      },
+    });
+
+    if (replacement.externalEditions.length > 0) {
+      await tx.publicationMapping.createMany({
+        data: replacement.externalEditions.map((edition) => ({
+          publicationId: replacement.publicationId,
+          sourceId: source.id,
+          ...edition,
+        })),
+      });
+    }
+  }
+};
+
 export const getPublicationMappings = async (publicationId: number) => {
   const mappings = await prisma.publicationMapping.findMany({
     where: { publicationId },
@@ -182,27 +267,36 @@ export const searchPublicationCandidates = async ({
 
 export const searchIssueNumberCandidates = async ({
   publicationIssueId,
+  externalEditionId,
   query,
 }: {
   publicationIssueId: number;
+  externalEditionId?: number;
   query?: string;
 }): Promise<IssueNumberCandidateDto[]> => {
+  if (!externalEditionId) {
+    return [];
+  }
+
   const publicationIssue = await getPublicationIssueForMatching(publicationIssueId);
 
   if (!publicationIssue) {
     return [];
   }
 
-  const issueQuery = query?.trim() || publicationIssue.issueNumber.canonicalValue;
-  const issues = await searchExternalIssueNumbers(issueQuery);
-  const normalizedTarget = normalizeIssueLookupText(publicationIssue.issueNumber.canonicalValue);
+  const targetIssueNumber = query?.trim() || publicationIssue.issueNumber.canonicalValue;
+  const issues = await searchExternalIssueNumbersByEdition({
+    externalEditionId,
+    query: targetIssueNumber,
+  });
+  const normalizedTarget = normalizeIssueLookupText(targetIssueNumber);
 
   return issues
     .map((issue) => {
       const normalizedCandidate = normalizeIssueLookupText(issue.number);
       const isExactMatch =
         normalizedTarget === normalizedCandidate ||
-        publicationIssue.issueNumber.canonicalValue.trim().toLocaleLowerCase("uk-UA") ===
+        targetIssueNumber.trim().toLocaleLowerCase("uk-UA") ===
           issue.number.trim().toLocaleLowerCase("uk-UA");
 
       return {
@@ -213,7 +307,7 @@ export const searchIssueNumberCandidates = async ({
         score: Number(
           Math.max(
             scoreTextSimilarity(normalizedTarget, normalizedCandidate),
-            scoreIssueSimilarity(publicationIssue.issueNumber.canonicalValue, issue.number),
+            scoreIssueSimilarity(targetIssueNumber, issue.number),
           ).toFixed(6),
         ),
       };
@@ -236,57 +330,10 @@ export const replacePublicationMappings = async ({
   publicationId: number;
   selections: Array<{ externalEditionId: number }>;
 }) => {
-  const source = await ensureExternalEditionSource();
-
-  if (selections.length === 0) {
-    await prisma.publicationMapping.deleteMany({
-      where: {
-        publicationId,
-        sourceId: source.id,
-      },
-    });
-
-    return [];
-  }
-
-  const uniqueSelections = Array.from(
-    new Map(selections.map((selection) => [selection.externalEditionId, selection])).values(),
-  );
-  const editionRows = await getExternalEditionsByIds(
-    uniqueSelections.map((selection) => selection.externalEditionId),
-  );
-  const editionById = new Map(editionRows.map((edition) => [edition.id, edition]));
-
-  const payload = uniqueSelections.flatMap((selection) => {
-    const edition = editionById.get(selection.externalEditionId);
-
-    if (!edition) {
-      return [];
-    }
-
-    return [
-      {
-        publicationId,
-        sourceId: source.id,
-        externalEditionId: edition.id,
-        externalEditionName: edition.name,
-      },
-    ];
-  });
+  const replacement = await preparePublicationMappingReplacement({ publicationId, selections });
 
   await prisma.$transaction(async (tx) => {
-    await tx.publicationMapping.deleteMany({
-      where: {
-        publicationId,
-        sourceId: source.id,
-      },
-    });
-
-    if (payload.length > 0) {
-      await tx.publicationMapping.createMany({
-        data: payload,
-      });
-    }
+    await applyPublicationMappingReplacements({ replacements: [replacement], tx });
   });
 
   return getPublicationMappings(publicationId);

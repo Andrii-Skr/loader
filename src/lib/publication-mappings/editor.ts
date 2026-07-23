@@ -1,4 +1,8 @@
 import type {
+  DocumentIssueMatchDto,
+  IssueNumberCandidateDto,
+  IssueNumberDraftSelection,
+  PublicationCandidateDto,
   PublicationIssueMappingRow,
   PublicationMappingDto,
 } from "@/lib/publication-mappings/types";
@@ -48,6 +52,61 @@ export const createDraftMappingRow = ({
   savedPublicationMapping: null,
   draftPublicationSelection: null,
   draftIssueSelection: null,
+});
+
+export const pickInitialPublicationCandidate = (candidates: PublicationCandidateDto[]) => {
+  const exactCandidate = candidates.find((candidate) => candidate.isExactMatch);
+
+  if (exactCandidate) {
+    return exactCandidate;
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  const [firstCandidate, secondCandidate] = candidates;
+
+  if (!firstCandidate) {
+    return null;
+  }
+
+  if ((firstCandidate.score ?? 0) >= 0.92 && (secondCandidate?.score ?? 0) < firstCandidate.score) {
+    return firstCandidate;
+  }
+
+  return null;
+};
+
+export const pickInitialIssueCandidate = (candidates: IssueNumberCandidateDto[]) =>
+  candidates.find((candidate) => candidate.isExactMatch) ?? null;
+
+export const getRowExternalEditionId = (row: PublicationIssueMappingRow) =>
+  row.savedPublicationMapping?.externalEditionId ??
+  row.draftPublicationSelection?.externalEditionId ??
+  null;
+
+export const syncIssueSelectionWithCandidates = ({
+  candidates,
+  selection,
+}: {
+  candidates: IssueNumberCandidateDto[];
+  selection: IssueNumberDraftSelection | null;
+}): IssueNumberDraftSelection | null => {
+  if (!selection) {
+    return null;
+  }
+
+  return candidates.some((candidate) => candidate.externalIssueId === selection.externalIssueId)
+    ? selection
+    : null;
+};
+
+export const toIssueDraftSelection = (
+  match: Pick<DocumentIssueMatchDto, "externalIssueId" | "externalIssueNumber">,
+): IssueNumberDraftSelection => ({
+  externalIssueId: match.externalIssueId,
+  externalIssueNumber: match.externalIssueNumber,
 });
 
 export const collectSelectionIdsFromRows = (rows: PublicationIssueMappingRow[]) => ({

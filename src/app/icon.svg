@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">PDF Loader</title>
+  <rect width="256" height="256" rx="56" fill="#F3EADB"/>
+  <path d="M75 39h70l40 40v106c0 17.1-13.9 31-31 31H75c-17.1 0-31-13.9-31-31V70c0-17.1 13.9-31 31-31Z" fill="#B14A2F"/>
+  <path d="M145 39v30c0 5.5 4.5 10 10 10h30Z" fill="#EADCC3"/>
+  <path d="M115 100v43m0 0-20-20m20 20 20-20M86 169h58" fill="none" stroke="#111827" stroke-linecap="round" stroke-linejoin="round" stroke-width="14"/>
+</svg>

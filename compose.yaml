@@ -1,0 +1,30 @@
+services:
+  app:
+    build:
+      context: .
+      target: runner
+    env_file:
+      - ${DOCKER_ENV_FILE:-.env.docker}
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    init: true
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - uploads:/app/storage/uploads
+
+  migrate:
+    profiles: ["migrate"]
+    build:
+      context: .
+      target: migrate
+    env_file:
+      - ${DOCKER_ENV_FILE:-.env.docker}
+    restart: "no"
+
+volumes:
+  uploads:

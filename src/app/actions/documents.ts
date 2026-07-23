@@ -47,7 +47,7 @@ export type UploadInvoiceActionResult = {
 };
 
 export type DeleteDocumentActionResult = {
-  errorKey: "missingSession" | "invalidInput" | "notFound" | "deleteFailed" | null;
+  errorKey: "missingSession" | "forbidden" | "invalidInput" | "notFound" | "deleteFailed" | null;
   success: boolean;
 };
 
@@ -176,6 +176,8 @@ export const deleteDocument = async ({
     },
     {
       requireAuth: true,
+      roles: ["ADMIN"],
+      onForbidden: () => ({ errorKey: "forbidden", success: false }),
       schema: deleteDocumentSchema,
       onUnauthorized: () => ({ errorKey: "missingSession", success: false }),
       onInvalidInput: () => ({ errorKey: "invalidInput", success: false }),

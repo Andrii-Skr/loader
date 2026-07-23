@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronUp, Plus, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
   forwardRef,
@@ -26,12 +26,18 @@ import {
   buildSavedMappingRows,
   collectSelectionIdsFromRows,
   createDraftMappingRow,
+  getRowExternalEditionId,
+  pickInitialIssueCandidate,
+  pickInitialPublicationCandidate,
+  syncIssueSelectionWithCandidates,
+  toIssueDraftSelection,
 } from "@/lib/publication-mappings/editor";
 import {
   getOccurrenceDocumentLabel,
   getOccurrenceRawText,
 } from "@/lib/publication-mappings/tooltip";
 import type {
+  DocumentLineAllocationDto,
   IssueNumberCandidateDto,
   LoadPublicationIssueEditorData,
   PublicationCandidateDto,
@@ -40,13 +46,20 @@ import type {
   PublicationIssueRegistryItem,
 } from "@/lib/publication-mappings/types";
 
+import { DocumentLineAllocationsClient } from "./DocumentLineAllocationsClient";
+
 export type PublicationIssueMappingEditorHandle = {
   getSelections: () => {
     publicationIssueId: number;
     publicationId: number;
-    hasConfirmedIssue: boolean;
+    matchedIssue: {
+      externalEditionId: number;
+      externalEditionName: string;
+      externalIssueId: number;
+      externalIssueNumber: string;
+    } | null;
     publicationSelectionIds: number[];
-  };
+  } | null;
 };
 
 const toPublicationOption = (candidate: PublicationCandidateDto): ComboboxOption => ({
@@ -61,44 +74,21 @@ const toIssueNumberOption = (candidate: IssueNumberCandidateDto): ComboboxOption
   score: candidate.score,
 });
 
-const pickInitialPublicationCandidate = (candidates: PublicationCandidateDto[]) => {
-  const exactCandidate = candidates.find((candidate) => candidate.isExactMatch);
-
-  if (exactCandidate) {
-    return exactCandidate;
-  }
-
-  if (candidates.length === 1) {
-    return candidates[0];
-  }
-
-  const [firstCandidate, secondCandidate] = candidates;
-
-  if (!firstCandidate) {
-    return null;
-  }
-
-  if ((firstCandidate.score ?? 0) >= 0.92 && (secondCandidate?.score ?? 0) < firstCandidate.score) {
-    return firstCandidate;
-  }
-
-  return null;
-};
-
-const pickInitialIssueCandidate = (candidates: IssueNumberCandidateDto[]) =>
-  candidates.find((candidate) => candidate.isExactMatch) ?? null;
-
 const buildInitialRows = ({
-  issueNumberCandidates,
+  autoSelectedPublicationCandidateId,
+  initialIssueNumberCandidatesByEditionId,
   publicationCandidates,
   selectedItem,
 }: {
-  issueNumberCandidates: IssueNumberCandidateDto[];
+  autoSelectedPublicationCandidateId: number | null;
+  initialIssueNumberCandidatesByEditionId: Record<number, IssueNumberCandidateDto[]>;
   publicationCandidates: PublicationCandidateDto[];
   selectedItem: PublicationIssueRegistryItem;
 }): PublicationIssueMappingRow[] => {
-  const initialPublicationCandidate = pickInitialPublicationCandidate(publicationCandidates);
-  const initialIssueNumberCandidate = pickInitialIssueCandidate(issueNumberCandidates);
+  const initialPublicationCandidate =
+    publicationCandidates.find(
+      (candidate) => candidate.externalEditionId === autoSelectedPublicationCandidateId,
+    ) ?? pickInitialPublicationCandidate(publicationCandidates);
   const savedRows = buildSavedMappingRows({
     parsedPublicationName: selectedItem.publicationName,
     parsedIssueNumber: selectedItem.parsedIssueNumber,
@@ -106,6 +96,19 @@ const buildInitialRows = ({
   });
 
   if (savedRows.length === 0) {
+    const initialIssueNumberCandidate = initialPublicationCandidate
+      ? pickInitialIssueCandidate(
+          initialIssueNumberCandidatesByEditionId[initialPublicationCandidate.externalEditionId] ??
+            [],
+        )
+      : null;
+    const savedDocumentIssueSelection =
+      selectedItem.savedDocumentIssueMatch &&
+      selectedItem.savedDocumentIssueMatch.externalEditionId ===
+        initialPublicationCandidate?.externalEditionId
+        ? toIssueDraftSelection(selectedItem.savedDocumentIssueMatch)
+        : null;
+
     return [
       {
         ...createDraftMappingRow({
@@ -120,11 +123,8 @@ const buildInitialRows = ({
             }
           : null,
         draftIssueSelection: initialIssueNumberCandidate
-          ? {
-              externalIssueId: initialIssueNumberCandidate.externalIssueId,
-              externalIssueNumber: initialIssueNumberCandidate.externalIssueNumber,
-            }
-          : null,
+          ? toIssueDraftSelection(initialIssueNumberCandidate)
+          : savedDocumentIssueSelection,
       },
     ];
   }
@@ -138,29 +138,60 @@ const buildInitialRows = ({
             externalEditionName: initialPublicationCandidate.externalEditionName,
           }
         : null,
-    draftIssueSelection: initialIssueNumberCandidate
-      ? {
-          externalIssueId: initialIssueNumberCandidate.externalIssueId,
-          externalIssueNumber: initialIssueNumberCandidate.externalIssueNumber,
-        }
-      : row.draftIssueSelection,
+    draftIssueSelection:
+      row.savedPublicationMapping !== null
+        ? selectedItem.savedDocumentIssueMatch &&
+          selectedItem.savedDocumentIssueMatch.externalEditionId ===
+            row.savedPublicationMapping.externalEditionId
+          ? toIssueDraftSelection(selectedItem.savedDocumentIssueMatch)
+          : null
+        : initialPublicationCandidate
+          ? (() => {
+              const initialIssueNumberCandidate = pickInitialIssueCandidate(
+                initialIssueNumberCandidatesByEditionId[
+                  initialPublicationCandidate.externalEditionId
+                ] ?? [],
+              );
+
+              if (initialIssueNumberCandidate) {
+                return toIssueDraftSelection(initialIssueNumberCandidate);
+              }
+
+              return selectedItem.savedDocumentIssueMatch &&
+                selectedItem.savedDocumentIssueMatch.externalEditionId ===
+                  initialPublicationCandidate.externalEditionId
+                ? toIssueDraftSelection(selectedItem.savedDocumentIssueMatch)
+                : null;
+            })()
+          : row.draftIssueSelection,
   }));
 };
 
 export const PublicationIssueMappingEditor = forwardRef<
   PublicationIssueMappingEditorHandle,
   {
+    allocationSaveLabel: string;
     editorData: LoadPublicationIssueEditorData;
+    documentId?: number;
+    allocationLines?: DocumentLineAllocationDto[];
     locale: AppLocale;
     selectedItem: PublicationIssueRegistryItem;
   }
->(function PublicationIssueMappingEditor({ editorData, locale, selectedItem }, ref) {
+>(function PublicationIssueMappingEditor(
+  { allocationLines = [], allocationSaveLabel, documentId, editorData, locale, selectedItem },
+  ref,
+) {
   const t = useTranslations("PublicationMappings");
   const [serverMessage, setServerMessage] = useState<string | null>(null);
+  const [isAllocationExpanded, setIsAllocationExpanded] = useState(false);
   const draftRowCounterRef = useRef(0);
+  const [issueNumberCandidatesByEditionId, setIssueNumberCandidatesByEditionId] = useState<
+    Record<number, IssueNumberCandidateDto[]>
+  >(() => editorData.initialIssueNumberCandidatesByEditionId);
   const [rows, setRows] = useState<PublicationIssueMappingRow[]>(() =>
     buildInitialRows({
-      issueNumberCandidates: editorData.issueNumberCandidates,
+      autoSelectedPublicationCandidateId: editorData.autoSelectedPublicationCandidateId,
+      initialIssueNumberCandidatesByEditionId: editorData.initialIssueNumberCandidatesByEditionId,
       publicationCandidates: editorData.publicationCandidates,
       selectedItem,
     }),
@@ -170,28 +201,59 @@ export const PublicationIssueMappingEditor = forwardRef<
     () => editorData.publicationCandidates.map(toPublicationOption),
     [editorData.publicationCandidates],
   );
-  const issueNumberOptions = useMemo(
-    () => editorData.issueNumberCandidates.map(toIssueNumberOption),
-    [editorData.issueNumberCandidates],
-  );
-
   useEffect(() => {
     draftRowCounterRef.current = 0;
+    setIssueNumberCandidatesByEditionId(editorData.initialIssueNumberCandidatesByEditionId);
     setRows(
       buildInitialRows({
-        issueNumberCandidates: editorData.issueNumberCandidates,
+        autoSelectedPublicationCandidateId: editorData.autoSelectedPublicationCandidateId,
+        initialIssueNumberCandidatesByEditionId: editorData.initialIssueNumberCandidatesByEditionId,
         publicationCandidates: editorData.publicationCandidates,
         selectedItem,
       }),
     );
     setServerMessage(null);
-  }, [editorData.issueNumberCandidates, editorData.publicationCandidates, selectedItem]);
+    setIsAllocationExpanded(false);
+  }, [
+    editorData.autoSelectedPublicationCandidateId,
+    editorData.initialIssueNumberCandidatesByEditionId,
+    editorData.publicationCandidates,
+    selectedItem,
+  ]);
 
   const updateRow = (
     rowId: string,
     updater: (row: PublicationIssueMappingRow) => PublicationIssueMappingRow,
   ) => {
     setRows((currentRows) => currentRows.map((row) => (row.rowId === rowId ? updater(row) : row)));
+  };
+
+  const loadIssueNumberOptions = async ({
+    externalEditionId,
+    query,
+  }: {
+    externalEditionId: number;
+    query?: string;
+  }) => {
+    const result = await searchIssueNumberMappingCandidates({
+      publicationIssueId: selectedItem.publicationIssueId,
+      locale,
+      externalEditionId,
+      query,
+    });
+
+    if (result.errorKey) {
+      setServerMessage(t(`messages.${result.errorKey}`));
+      return [];
+    }
+
+    setServerMessage(null);
+    setIssueNumberCandidatesByEditionId((current) => ({
+      ...current,
+      [externalEditionId]: result.candidates,
+    }));
+
+    return result.candidates;
   };
 
   const appendDraftRow = () => {
@@ -204,6 +266,15 @@ export const PublicationIssueMappingEditor = forwardRef<
         rowId: `draft-${selectedItem.publicationIssueId}-${draftRowCounterRef.current}`,
       }),
     ]);
+  };
+
+  const handleAddRow = () => {
+    if (documentId && allocationLines.length > 0) {
+      setIsAllocationExpanded(true);
+      return;
+    }
+
+    appendDraftRow();
   };
 
   const removeDraftRow = (rowId: string) => {
@@ -241,17 +312,35 @@ export const PublicationIssueMappingEditor = forwardRef<
     ref,
     () => ({
       getSelections: () => {
+        if (isAllocationExpanded) {
+          return null;
+        }
+
         const { publicationSelectionIds } = collectSelectionIdsFromRows(rows);
+        const selectedIssueRow =
+          rows.find(
+            (row) => row.draftIssueSelection !== null && getRowExternalEditionId(row) !== null,
+          ) ?? null;
 
         return {
           publicationIssueId: selectedItem.publicationIssueId,
           publicationId: selectedItem.publicationId,
-          hasConfirmedIssue: rows.some((row) => row.draftIssueSelection !== null),
+          matchedIssue: selectedIssueRow?.draftIssueSelection
+            ? {
+                externalEditionId: getRowExternalEditionId(selectedIssueRow) as number,
+                externalEditionName:
+                  selectedIssueRow.savedPublicationMapping?.externalEditionName ??
+                  selectedIssueRow.draftPublicationSelection?.externalEditionName ??
+                  "",
+                externalIssueId: selectedIssueRow.draftIssueSelection.externalIssueId,
+                externalIssueNumber: selectedIssueRow.draftIssueSelection.externalIssueNumber,
+              }
+            : null,
           publicationSelectionIds,
         };
       },
     }),
-    [rows, selectedItem.publicationId, selectedItem.publicationIssueId],
+    [isAllocationExpanded, rows, selectedItem.publicationId, selectedItem.publicationIssueId],
   );
 
   const renderPublicationCell = (row: PublicationIssueMappingRow) => {
@@ -295,15 +384,31 @@ export const PublicationIssueMappingEditor = forwardRef<
 
           return result.candidates.map(toPublicationOption);
         }}
-        onSelect={(option) => {
+        onSelect={async (option) => {
+          const nextPublicationSelection = option
+            ? {
+                externalEditionId: option.value,
+                externalEditionName: option.label,
+              }
+            : null;
+
+          let nextIssueCandidates: IssueNumberCandidateDto[] = [];
+
+          if (nextPublicationSelection) {
+            nextIssueCandidates =
+              issueNumberCandidatesByEditionId[nextPublicationSelection.externalEditionId] ??
+              (await loadIssueNumberOptions({
+                externalEditionId: nextPublicationSelection.externalEditionId,
+              }));
+          }
+
           updateRow(row.rowId, (currentRow) => ({
             ...currentRow,
-            draftPublicationSelection: option
-              ? {
-                  externalEditionId: option.value,
-                  externalEditionName: option.label,
-                }
-              : null,
+            draftPublicationSelection: nextPublicationSelection,
+            draftIssueSelection: syncIssueSelectionWithCandidates({
+              candidates: nextIssueCandidates,
+              selection: currentRow.draftIssueSelection,
+            }),
           }));
         }}
         placeholder={t("publicationComboboxPlaceholder")}
@@ -320,136 +425,200 @@ export const PublicationIssueMappingEditor = forwardRef<
     );
   };
 
-  const renderIssueNumberCell = (row: PublicationIssueMappingRow) => (
-    <Combobox
-      contentClassName="w-[min(30rem,max(26rem,var(--radix-popover-trigger-width)))]"
-      excludedValues={getExcludedIssueNumberIds(row.rowId)}
-      initialOptions={issueNumberOptions}
-      messages={{
-        clear: t("clearSelection"),
-        empty: t("emptyIssueNumberCandidates"),
-        searching: t("searchPending"),
-        searchPlaceholder: t("issueNumberSearchPlaceholder"),
-      }}
-      onSearch={async (query) => {
-        const result = await searchIssueNumberMappingCandidates({
-          publicationIssueId: selectedItem.publicationIssueId,
-          locale,
-          query,
-        });
+  const renderIssueNumberCell = (row: PublicationIssueMappingRow) => {
+    const externalEditionId = getRowExternalEditionId(row);
+    const issueNumberOptions =
+      externalEditionId === null
+        ? []
+        : (issueNumberCandidatesByEditionId[externalEditionId] ?? []).map(toIssueNumberOption);
 
-        if (result.errorKey) {
-          setServerMessage(t(`messages.${result.errorKey}`));
-          return [];
-        }
+    return (
+      <Combobox
+        contentClassName="w-[min(30rem,max(26rem,var(--radix-popover-trigger-width)))]"
+        disabled={externalEditionId === null}
+        excludedValues={getExcludedIssueNumberIds(row.rowId)}
+        initialOptions={issueNumberOptions}
+        messages={{
+          clear: t("clearSelection"),
+          empty: t("emptyIssueNumberCandidates"),
+          searching: t("searchPending"),
+          searchPlaceholder: t("issueNumberSearchPlaceholder"),
+        }}
+        onSearch={async (query) => {
+          if (externalEditionId === null) {
+            return [];
+          }
 
-        return result.candidates.map(toIssueNumberOption);
-      }}
-      onSelect={(option) => {
-        updateRow(row.rowId, (currentRow) => ({
-          ...currentRow,
-          draftIssueSelection: option
-            ? {
-                externalIssueId: option.value,
-                externalIssueNumber: option.label,
+          const candidates = await loadIssueNumberOptions({
+            externalEditionId,
+            query,
+          });
+
+          return candidates.map(toIssueNumberOption);
+        }}
+        onSelect={(option) => {
+          setRows((currentRows) =>
+            currentRows.map((currentRow) => {
+              if (currentRow.rowId === row.rowId) {
+                return {
+                  ...currentRow,
+                  draftIssueSelection: option
+                    ? {
+                        externalIssueId: option.value,
+                        externalIssueNumber: option.label,
+                      }
+                    : null,
+                };
               }
-            : null,
-        }));
-      }}
-      placeholder={t("issueNumberComboboxPlaceholder")}
-      selectedOption={
-        row.draftIssueSelection
-          ? {
-              value: row.draftIssueSelection.externalIssueId,
-              label: row.draftIssueSelection.externalIssueNumber,
-            }
-          : null
-      }
-      widthClassName="min-w-[12rem]"
-    />
-  );
+
+              return option ? { ...currentRow, draftIssueSelection: null } : currentRow;
+            }),
+          );
+        }}
+        placeholder={t("issueNumberComboboxPlaceholder")}
+        selectedOption={
+          row.draftIssueSelection
+            ? {
+                value: row.draftIssueSelection.externalIssueId,
+                label: row.draftIssueSelection.externalIssueNumber,
+              }
+            : null
+        }
+        widthClassName="min-w-[12rem]"
+      />
+    );
+  };
 
   return (
     <>
-      {rows.map((row, index) => (
-        <TableRow key={row.rowId}>
+      {isAllocationExpanded ? (
+        <TableRow>
           <TableCell>
-            {index === 0 ? (
-              <ParsedValueTooltip
-                label={selectedItem.publicationName}
-                locale={locale}
-                publicationIssueId={selectedItem.publicationIssueId}
-                occurrences={selectedItem.documentOccurrences}
-                occurrenceCount={selectedItem.documentOccurrenceCount}
-              />
-            ) : null}
+            <ParsedValueTooltip
+              label={selectedItem.publicationName}
+              locale={locale}
+              publicationIssueId={selectedItem.publicationIssueId}
+              occurrences={selectedItem.documentOccurrences}
+              occurrenceCount={selectedItem.documentOccurrenceCount}
+            />
           </TableCell>
           <TableCell>
-            {index === 0 ? (
-              <ParsedValueTooltip
-                label={selectedItem.parsedIssueNumber}
-                locale={locale}
-                publicationIssueId={selectedItem.publicationIssueId}
-                occurrences={selectedItem.documentOccurrences}
-                occurrenceCount={selectedItem.documentOccurrenceCount}
-              />
-            ) : null}
+            <ParsedValueTooltip
+              label={selectedItem.parsedIssueNumber}
+              locale={locale}
+              publicationIssueId={selectedItem.publicationIssueId}
+              occurrences={selectedItem.documentOccurrences}
+              occurrenceCount={selectedItem.documentOccurrenceCount}
+            />
           </TableCell>
-          <TableCell>{renderPublicationCell(row)}</TableCell>
-          <TableCell>{renderIssueNumberCell(row)}</TableCell>
-          <TableCell className="w-[7.5rem] text-center align-middle">
-            {index === 0 ? (
-              <div className="flex justify-center">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        aria-label={t("addRow")}
-                        onClick={appendDraftRow}
-                        size="icon-sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <Plus className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <span>{t("addRow")}</span>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            ) : row.kind === "draft" ? (
-              <div className="flex justify-center">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        aria-label={t("removeRow")}
-                        onClick={() => removeDraftRow(row.rowId)}
-                        size="icon-sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <span>{t("removeRow")}</span>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            ) : (
-              <span />
-            )}
+          <TableCell className="muted" colSpan={2}>
+            {t("allocationMode")}
+          </TableCell>
+          <TableCell className="text-center">
+            <Button
+              aria-label={t("collapseAllocation")}
+              onClick={() => setIsAllocationExpanded(false)}
+              size="icon-sm"
+              type="button"
+              variant="outline"
+            >
+              <ChevronUp className="size-4" />
+            </Button>
           </TableCell>
         </TableRow>
-      ))}
+      ) : (
+        rows.map((row, index) => (
+          <TableRow key={row.rowId}>
+            <TableCell>
+              {index === 0 ? (
+                <ParsedValueTooltip
+                  label={selectedItem.publicationName}
+                  locale={locale}
+                  publicationIssueId={selectedItem.publicationIssueId}
+                  occurrences={selectedItem.documentOccurrences}
+                  occurrenceCount={selectedItem.documentOccurrenceCount}
+                />
+              ) : null}
+            </TableCell>
+            <TableCell>
+              {index === 0 ? (
+                <ParsedValueTooltip
+                  label={selectedItem.parsedIssueNumber}
+                  locale={locale}
+                  publicationIssueId={selectedItem.publicationIssueId}
+                  occurrences={selectedItem.documentOccurrences}
+                  occurrenceCount={selectedItem.documentOccurrenceCount}
+                />
+              ) : null}
+            </TableCell>
+            <TableCell>{renderPublicationCell(row)}</TableCell>
+            <TableCell>{renderIssueNumberCell(row)}</TableCell>
+            <TableCell className="w-[7.5rem] text-center align-middle">
+              {index === 0 ? (
+                <div className="flex justify-center">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          aria-label={t("addRow")}
+                          onClick={handleAddRow}
+                          size="icon-sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Plus className="size-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <span>{t("addRow")}</span>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              ) : row.kind === "draft" ? (
+                <div className="flex justify-center">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          aria-label={t("removeRow")}
+                          onClick={() => removeDraftRow(row.rowId)}
+                          size="icon-sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <span>{t("removeRow")}</span>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              ) : (
+                <span />
+              )}
+            </TableCell>
+          </TableRow>
+        ))
+      )}
       {serverMessage ? (
         <TableRow>
           <TableCell colSpan={5}>
             <p className="text-sm text-[color:var(--accent-strong)]">{serverMessage}</p>
+          </TableCell>
+        </TableRow>
+      ) : null}
+      {isAllocationExpanded && documentId ? (
+        <TableRow>
+          <TableCell colSpan={5}>
+            <DocumentLineAllocationsClient
+              documentId={documentId}
+              lines={allocationLines}
+              locale={locale}
+              saveLabel={allocationSaveLabel}
+            />
           </TableCell>
         </TableRow>
       ) : null}

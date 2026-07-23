@@ -27,6 +27,14 @@ const getDocumentDetailsLineItemsArgs = () =>
           },
         },
       },
+      externalMatches: {
+        orderBy: [{ isPrimary: "desc" }, { id: "asc" }],
+        select: {
+          externalEditionName: true,
+          externalIssueNumber: true,
+          quantity: true,
+        },
+      },
     },
   }) satisfies Prisma.Document$lineItemsArgs;
 
@@ -40,6 +48,7 @@ export const getDashboardDocuments = cache(async () => {
         lineItems: {
           select: {
             publicationIssueConfirmedAt: true,
+            externalMatchCount: true,
             publicationIssue: {
               select: {
                 publication: {

@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+.next
+node_modules
+coverage
+dist
+storage/uploads
+src/generated/prisma
+*.tsbuildinfo
+.DS_Store
+.agents
+.codex
+README.md

@@ -291,6 +291,17 @@ export default async function DocumentDetailsPage({
                           label={t(`mappingStatus.${mappingStatus}`)}
                           status={mappingStatus}
                         />
+                        {item.externalMatches.length > 0 ? (
+                          <div className="mt-2 grid gap-1 text-xs text-[color:var(--ink-soft)]">
+                            {item.externalMatches.map((match, index) => (
+                              <span
+                                key={`${match.externalEditionName}-${match.externalIssueNumber}-${index}`}
+                              >
+                                {`${match.externalEditionName} · ${match.externalIssueNumber ?? "—"} · ${match.quantity.toString()}`}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                       </TableCell>
                       <TableCell>{item.quantity.toString()}</TableCell>
                       <TableCell className="text-right [font-variant-numeric:tabular-nums]">

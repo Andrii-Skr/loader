@@ -55,6 +55,26 @@ const formatDocumentLabel = ({
   return `${documentType} № ${documentNumber} ${onWord} ${day}.${month}.${year}`;
 };
 
+const formatDocumentSearchValue = ({
+  documentNumber,
+  documentDate,
+}: {
+  documentNumber: string | null;
+  documentDate: Date | null;
+}) => {
+  if (!documentDate) {
+    return documentNumber ?? "";
+  }
+
+  const day = String(documentDate.getUTCDate()).padStart(2, "0");
+  const month = String(documentDate.getUTCMonth() + 1).padStart(2, "0");
+  const year = documentDate.getUTCFullYear();
+
+  return [documentNumber, `${day}.${month}.${year}`, `${year}-${month}-${day}`]
+    .filter(Boolean)
+    .join(" ");
+};
+
 export default async function LocalizedDashboardPage({
   params,
 }: {
@@ -82,6 +102,15 @@ export default async function LocalizedDashboardPage({
     partiallyMatched: documentDetails("mappingStatus.partiallyMatched"),
     fullyMatched: documentDetails("mappingStatus.fullyMatched"),
   };
+  const tableLabels = {
+    document: t("table.document"),
+    supplier: t("table.supplier"),
+    recipient: t("table.recipient"),
+    amount: t("table.amount"),
+    status: t("table.status"),
+    rows: t("table.rows"),
+    actions: t("table.actions"),
+  };
 
   const serializedDocuments = documents.map((document) => ({
     id: document.id,
@@ -91,6 +120,10 @@ export default async function LocalizedDashboardPage({
       documentDate: document.documentDate,
       fallback: document.sourceFileName,
       onWord: t("documentDatePrefix"),
+    }),
+    documentSearchValue: formatDocumentSearchValue({
+      documentNumber: document.documentNumber,
+      documentDate: document.documentDate,
     }),
     supplierTaxId: document.supplier?.taxId ?? null,
     supplierName: document.supplier?.name ?? null,
@@ -102,6 +135,7 @@ export default async function LocalizedDashboardPage({
       document.documentContour,
       common("pending"),
     ),
+    totalAmountValue: document.totalAmount === null ? null : Number(document.totalAmount),
     mappingStatus: document.mappingStatus,
     lineItemsCount: document._count.lineItems,
     documentDate: document.documentDate,
@@ -173,22 +207,32 @@ export default async function LocalizedDashboardPage({
         <DocumentRegistry
           actionableDocuments={actionableDocuments}
           actionableSectionTitle={t("actionableSectionTitle")}
+          canDeleteDocuments={canManageMappings}
           completedGroups={completedGroups}
           completedMonthToggleLabel={t("completedMonthToggle")}
           completedSectionTitle={t("completedSectionTitle")}
+          emptySearchLabel={t("emptySearch")}
           emptyRegistryLabel={t("emptyRegistry")}
           locale={locale}
           mappingStatusLabels={mappingStatusLabels}
           pendingLabel={common("pending")}
-          tableLabels={{
-            document: t("table.document"),
-            supplier: t("table.supplier"),
-            recipient: t("table.recipient"),
-            amount: t("table.amount"),
-            status: t("table.status"),
-            rows: t("table.rows"),
-            actions: t("table.actions"),
+          reconciliationLabel={t("reconciliation.open")}
+          searchPlaceholder={t("searchPlaceholder")}
+          searchLabels={{
+            document: t("searchByColumn", { column: tableLabels.document }),
+            supplier: t("searchByColumn", { column: tableLabels.supplier }),
+            recipient: t("searchByColumn", { column: tableLabels.recipient }),
+            amount: t("searchByColumn", { column: tableLabels.amount }),
+            rows: t("searchByColumn", { column: tableLabels.rows }),
           }}
+          statusFilterLabel={t("searchByColumn", { column: tableLabels.status })}
+          statusFilterPlaceholder={t("allStatuses")}
+          sortLabels={{
+            ascending: t("sortAscending"),
+            descending: t("sortDescending"),
+          }}
+          sortAlphabet={t("sortAlphabet")}
+          tableLabels={tableLabels}
         />
       </Card>
     </div>

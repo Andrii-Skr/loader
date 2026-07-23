@@ -39,9 +39,6 @@ export default async function LocalizedLoginPage({
               <br />
               {t("titleLine3")}
             </h1>
-            <p className="muted" style={{ maxWidth: 470, margin: 0, lineHeight: 1.7 }}>
-              {t("description")}
-            </p>
           </div>
         </section>
 

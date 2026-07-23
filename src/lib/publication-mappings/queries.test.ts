@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const prismaMocks = vi.hoisted(() => ({
   publicationIssueFindMany: vi.fn(),
   publicationIssueFindUnique: vi.fn(),
+  specialDocumentExternalMatchFindMany: vi.fn(),
+  specialDocumentFindMany: vi.fn(),
   specialDocumentGroupBy: vi.fn(),
 }));
 
@@ -15,7 +17,11 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: prismaMocks.publicationIssueFindUnique,
     },
     specialDocument: {
+      findMany: prismaMocks.specialDocumentFindMany,
       groupBy: prismaMocks.specialDocumentGroupBy,
+    },
+    specialDocumentExternalMatch: {
+      findMany: prismaMocks.specialDocumentExternalMatchFindMany,
     },
   },
 }));
@@ -35,6 +41,10 @@ describe("getPublicationIssueRegistry", () => {
     prismaMocks.publicationIssueFindMany.mockResolvedValue([]);
     prismaMocks.publicationIssueFindUnique.mockReset();
     prismaMocks.publicationIssueFindUnique.mockResolvedValue(null);
+    prismaMocks.specialDocumentExternalMatchFindMany.mockReset();
+    prismaMocks.specialDocumentExternalMatchFindMany.mockResolvedValue([]);
+    prismaMocks.specialDocumentFindMany.mockReset();
+    prismaMocks.specialDocumentFindMany.mockResolvedValue([]);
     prismaMocks.specialDocumentGroupBy.mockReset();
     prismaMocks.specialDocumentGroupBy.mockResolvedValue([]);
     getExactCandidateCountsMock.mockReset();
@@ -154,6 +164,9 @@ describe("getPublicationIssueRegistry", () => {
         issueNumberCandidateCount: 0,
         hasConfirmedDocumentMatch: false,
         documentOccurrenceCount: 12,
+        hasMultipleDocumentIssueMatches: false,
+        documentIssueMatchCount: 0,
+        savedDocumentIssueMatchDetails: [],
         documentOccurrences: [
           {
             documentNumber: "A-17",
@@ -216,6 +229,8 @@ describe("getPublicationIssueRegistry", () => {
         publicationIssueId: 11,
         hasConfirmedDocumentMatch: false,
         fullyMatched: false,
+        hasMultipleDocumentIssueMatches: false,
+        documentIssueMatchCount: 0,
       }),
     ]);
   });
@@ -268,6 +283,87 @@ describe("getPublicationIssueRegistry", () => {
         publicationIssueId: 11,
         hasConfirmedDocumentMatch: true,
         fullyMatched: true,
+      }),
+    ]);
+  });
+
+  it("returns the saved external issue match for the selected document", async () => {
+    prismaMocks.publicationIssueFindMany.mockResolvedValue([
+      {
+        id: 11,
+        _count: { lineItems: 1 },
+        publication: {
+          id: 3,
+          displayName: "Філворди",
+          mappings: [
+            {
+              id: 1,
+              externalEditionId: 7,
+              externalEditionName: "Філворди",
+              source: { code: "idz-ukr", displayName: "IDZ-UKR" },
+            },
+          ],
+        },
+        issueNumber: {
+          id: 4,
+          rawValue: "4",
+          canonicalValue: "04-26",
+        },
+        lineItems: [],
+      },
+    ]);
+    prismaMocks.specialDocumentFindMany.mockResolvedValue([
+      {
+        publicationIssueId: 11,
+        matchedExternalEditionId: 7,
+        matchedExternalIssueId: 101,
+        matchedExternalIssueNumber: "04-26",
+      },
+    ]);
+    prismaMocks.specialDocumentExternalMatchFindMany.mockResolvedValue([
+      {
+        externalEditionId: 7,
+        externalEditionName: "Філворди",
+        externalIssueId: 101,
+        externalIssueNumber: "04-26",
+        quantity: { toString: () => "1000" },
+        unitPrice: { toString: () => "5.00" },
+        lineBaseAmount: { toString: () => "5000.00" },
+        lineVatAmount: { toString: () => "1000.00" },
+        lineTotalAmount: { toString: () => "6000.00" },
+        currency: "UAH",
+        isPrimary: true,
+        specialDocument: {
+          publicationIssueId: 11,
+        },
+      },
+    ]);
+
+    await expect(getPublicationIssueRegistry("all", 42)).resolves.toEqual([
+      expect.objectContaining({
+        publicationIssueId: 11,
+        hasMultipleDocumentIssueMatches: false,
+        documentIssueMatchCount: 1,
+        savedDocumentIssueMatch: {
+          externalEditionId: 7,
+          externalIssueId: 101,
+          externalIssueNumber: "04-26",
+        },
+        savedDocumentIssueMatchDetails: [
+          {
+            externalEditionId: 7,
+            externalEditionName: "Філворди",
+            externalIssueId: 101,
+            externalIssueNumber: "04-26",
+            quantity: "1000",
+            unitPrice: "5.00",
+            lineBaseAmount: "5000.00",
+            lineVatAmount: "1000.00",
+            lineTotalAmount: "6000.00",
+            currency: "UAH",
+            isPrimary: true,
+          },
+        ],
       }),
     ]);
   });

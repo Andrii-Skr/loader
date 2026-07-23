@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import { getDocumentMappingStatus } from "@/lib/documents/mapping-status";
-import { formatRegistryMonthLabel, splitRegistryDocuments } from "@/lib/documents/registry";
+import {
+  formatRegistryMonthLabel,
+  getRegistryReconciliationPath,
+  splitRegistryDocuments,
+} from "@/lib/documents/registry";
 
 describe("formatRegistryMonthLabel", () => {
   it("formats month and year without locale-specific year suffixes", () => {
     const label = formatRegistryMonthLabel("ru", new Date(Date.UTC(2026, 5, 10)));
 
     expect(label).toBe("июнь 2026");
+  });
+});
+
+describe("getRegistryReconciliationPath", () => {
+  it("links a dated group to its monthly reconciliation and excludes undated documents", () => {
+    expect(getRegistryReconciliationPath("2026-04")).toBe("/dashboard/reconciliation/2026-04");
+    expect(getRegistryReconciliationPath("undated")).toBeNull();
   });
 });
 
@@ -131,6 +142,20 @@ describe("getDocumentMappingStatus", () => {
       getDocumentMappingStatus([
         {
           publicationIssueConfirmedAt: null,
+          publicationIssue: {
+            publication: { _count: { mappings: 1 } },
+          },
+        },
+      ]),
+    ).toBe("partiallyMatched");
+  });
+
+  it("keeps legacy confirmations without external matches actionable", () => {
+    expect(
+      getDocumentMappingStatus([
+        {
+          publicationIssueConfirmedAt: new Date("2026-07-22T00:00:00.000Z"),
+          externalMatchCount: 0,
           publicationIssue: {
             publication: { _count: { mappings: 1 } },
           },

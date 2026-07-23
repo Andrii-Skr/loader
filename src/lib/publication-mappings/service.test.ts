@@ -8,7 +8,11 @@ const prismaMocks = vi.hoisted(() => {
   const publicationCreateMany = vi.fn();
   const issueDeleteMany = vi.fn();
   const issueCreateMany = vi.fn();
+  const externalEditionSourceUpsert = vi.fn();
   const tx = {
+    externalEditionSource: {
+      upsert: externalEditionSourceUpsert,
+    },
     publicationMapping: {
       deleteMany: publicationDeleteMany,
       createMany: publicationCreateMany,
@@ -20,7 +24,7 @@ const prismaMocks = vi.hoisted(() => {
   };
 
   return {
-    externalEditionSourceUpsert: vi.fn(),
+    externalEditionSourceUpsert,
     publicationIssueFindUnique,
     publicationMappingFindMany: publicationFindMany,
     issueNumberMappingFindMany: issueFindMany,
@@ -33,7 +37,7 @@ const externalRepositoryMocks = vi.hoisted(() => ({
   getExternalEditionsByIds: vi.fn(),
   getExternalIssueNumbersByIds: vi.fn(),
   searchExternalEditions: vi.fn(),
-  searchExternalIssueNumbers: vi.fn(),
+  searchExternalIssueNumbersByEdition: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -114,7 +118,17 @@ describe("searchPublicationCandidates", () => {
 describe("searchIssueNumberCandidates", () => {
   beforeEach(() => {
     prismaMocks.publicationIssueFindUnique.mockReset();
-    externalRepositoryMocks.searchExternalIssueNumbers.mockReset();
+    externalRepositoryMocks.searchExternalIssueNumbersByEdition.mockReset();
+  });
+
+  it("returns an empty list when external edition is not selected", async () => {
+    const candidates = await searchIssueNumberCandidates({
+      publicationIssueId: 12,
+    });
+
+    expect(candidates).toEqual([]);
+    expect(prismaMocks.publicationIssueFindUnique).not.toHaveBeenCalled();
+    expect(externalRepositoryMocks.searchExternalIssueNumbersByEdition).not.toHaveBeenCalled();
   });
 
   it("prefers issue numbers with a single slash over duplicated slash variants", async () => {
@@ -129,13 +143,14 @@ describe("searchIssueNumberCandidates", () => {
         canonicalValue: "06/26",
       },
     });
-    externalRepositoryMocks.searchExternalIssueNumbers.mockResolvedValue([
+    externalRepositoryMocks.searchExternalIssueNumbersByEdition.mockResolvedValue([
       { id: 10, number: "06//26" },
       { id: 9, number: "06/26" },
     ]);
 
     const candidates = await searchIssueNumberCandidates({
       publicationIssueId: 12,
+      externalEditionId: 77,
     });
 
     expect(candidates[0]).toMatchObject({
@@ -146,6 +161,41 @@ describe("searchIssueNumberCandidates", () => {
     expect(candidates[1]).toMatchObject({
       externalIssueId: 10,
       externalIssueNumber: "06//26",
+      isExactMatch: true,
+    });
+    expect(externalRepositoryMocks.searchExternalIssueNumbersByEdition).toHaveBeenCalledWith({
+      externalEditionId: 77,
+      query: "06/26",
+    });
+  });
+
+  it("prioritizes the exact typed number over token-only matches", async () => {
+    prismaMocks.publicationIssueFindUnique.mockResolvedValue({
+      id: 12,
+      publication: {
+        id: 3,
+        displayName: "Копейка. ТВ программа",
+      },
+      issueNumber: {
+        id: 4,
+        canonicalValue: "04-26",
+      },
+    });
+    externalRepositoryMocks.searchExternalIssueNumbersByEdition.mockResolvedValue([
+      { id: 30, number: "04-25" },
+      { id: 31, number: "01-26" },
+      { id: 29, number: "01-25" },
+    ]);
+
+    const candidates = await searchIssueNumberCandidates({
+      publicationIssueId: 12,
+      externalEditionId: 77,
+      query: "01-25",
+    });
+
+    expect(candidates[0]).toMatchObject({
+      externalIssueId: 29,
+      externalIssueNumber: "01-25",
       isExactMatch: true,
     });
   });

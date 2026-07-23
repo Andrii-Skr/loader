@@ -17,6 +17,9 @@ export type RegistryDocumentGroup<TDocument> = {
 const getMonthKey = (date: Date) =>
   `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 
+export const getRegistryReconciliationPath = (monthKey: string) =>
+  monthKey === "undated" ? null : `/dashboard/reconciliation/${monthKey}`;
+
 export const formatRegistryMonthLabel = (locale: string, date: Date) =>
   new Intl.DateTimeFormat(locale, {
     month: "long",

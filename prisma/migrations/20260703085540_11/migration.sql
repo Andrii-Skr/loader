@@ -1,0 +1,4 @@
+-- Intentionally empty.
+-- The external-match table is introduced by the later
+-- 20260703124500_special_document_external_match_details migration, which
+-- creates the foreign key with the desired ON UPDATE behavior.

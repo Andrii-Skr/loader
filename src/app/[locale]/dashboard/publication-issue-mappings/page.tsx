@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Link, redirect } from "@/i18n/navigation";
 import { type AppLocale, routing } from "@/i18n/routing";
-import { getPublicationIssueRegistry } from "@/lib/publication-mappings/queries";
+import { pickInitialPublicationCandidate } from "@/lib/publication-mappings/editor";
+import {
+  getDocumentLineAllocations,
+  getPublicationIssueRegistry,
+} from "@/lib/publication-mappings/queries";
 import {
   searchIssueNumberCandidates,
   searchPublicationCandidates,
@@ -54,28 +58,42 @@ export default async function PublicationIssueMappingsPage({
     ? [...baseFilterValues, "document-unmatched" as const]
     : baseFilterValues;
 
-  const [registry, t, common] = await Promise.all([
+  const [registry, documentLines, t, common] = await Promise.all([
     getPublicationIssueRegistry(filter, documentId),
+    documentId ? getDocumentLineAllocations(documentId) : Promise.resolve([]),
     getTranslations({ locale, namespace: "PublicationMappings" }),
     getTranslations({ locale, namespace: "Common" }),
   ]);
-
   const editorEntries = await Promise.all(
     registry.map(async (item) => {
-      const [publicationCandidates, issueNumberCandidates] = await Promise.all([
-        searchPublicationCandidates({
-          publicationIssueId: item.publicationIssueId,
-        }),
-        searchIssueNumberCandidates({
-          publicationIssueId: item.publicationIssueId,
-        }),
-      ]);
+      const publicationCandidates = await searchPublicationCandidates({
+        publicationIssueId: item.publicationIssueId,
+      });
+      const autoSelectedPublicationCandidate =
+        publicationCandidates.find(
+          (candidate) =>
+            candidate.externalEditionId === item.savedDocumentIssueMatch?.externalEditionId,
+        ) ??
+        item.publicationMappings[0] ??
+        pickInitialPublicationCandidate(publicationCandidates);
+      const initialIssueNumberCandidates = autoSelectedPublicationCandidate
+        ? await searchIssueNumberCandidates({
+            publicationIssueId: item.publicationIssueId,
+            externalEditionId: autoSelectedPublicationCandidate.externalEditionId,
+          })
+        : [];
 
       return {
         item,
         editorData: {
           publicationCandidates,
-          issueNumberCandidates,
+          autoSelectedPublicationCandidateId:
+            autoSelectedPublicationCandidate?.externalEditionId ?? null,
+          initialIssueNumberCandidatesByEditionId: autoSelectedPublicationCandidate
+            ? {
+                [autoSelectedPublicationCandidate.externalEditionId]: initialIssueNumberCandidates,
+              }
+            : {},
         },
       };
     }),
@@ -141,15 +159,19 @@ export default async function PublicationIssueMappingsPage({
           <Badge>{common("records", { count: registry.length })}</Badge>
         </div>
 
-        {registry.length === 0 ? (
+        {registry.length === 0 && documentLines.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>
             {t("emptyRegistry")}
           </p>
         ) : (
           <PublicationIssueMappingsTableClient
+            allocationSaveLabel={t("saveAllocations")}
             documentId={documentId}
+            documentLines={documentLines}
             entries={editorEntries}
             locale={locale}
+            saveLabel={documentId ? t("saveStandardMappings") : t("saveSubmit")}
+            savePendingLabel={t("savePending")}
           />
         )}
       </Card>

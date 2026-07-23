@@ -1,6 +1,5 @@
 import { AlertTriangle, CheckCircle2, CircleHelp, XCircle } from "lucide-react";
 
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { MappingStatusKey } from "@/lib/documents/mapping-status";
 import { cn } from "@/lib/utils";
 
@@ -30,18 +29,13 @@ export function MappingStatusIcon({
   const Icon = iconByStatus[status];
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className={cn("inline-flex items-center justify-center", className)}>
-            <Icon aria-hidden="true" className={cn("size-4", classNameByStatus[status])} />
-            <span className="sr-only">{label}</span>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>
-          <span>{label}</span>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <span
+      aria-label={label}
+      className={cn("inline-flex items-center justify-center", className)}
+      role="img"
+      title={label}
+    >
+      <Icon aria-hidden="true" className={cn("size-4", classNameByStatus[status])} />
+    </span>
   );
 }

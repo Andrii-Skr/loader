@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronsUpDown, LoaderCircle, X } from "lucide-react";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,34 +48,56 @@ export function Combobox({
   const [query, setQuery] = useState("");
   const [options, setOptions] = useState(initialOptions);
   const [isSearching, startSearchTransition] = useTransition();
+  const searchRequestIdRef = useRef(0);
+  const initialOptionsRef = useRef(initialOptions);
 
   useEffect(() => {
-    setOptions(initialOptions);
+    initialOptionsRef.current = initialOptions;
   }, [initialOptions]);
+
+  const runSearch = useEffectEvent(async (normalizedQuery: string, requestId: number) => {
+    const nextOptions = await onSearch(normalizedQuery);
+
+    if (searchRequestIdRef.current !== requestId) {
+      return;
+    }
+
+    setOptions(nextOptions);
+  });
+
+  useEffect(() => {
+    if (!open || query.trim().length === 0) {
+      setOptions(initialOptions);
+    }
+  }, [initialOptions, open, query]);
 
   useEffect(() => {
     if (!open) {
+      searchRequestIdRef.current += 1;
       setQuery("");
-      setOptions(initialOptions);
+      setOptions(initialOptionsRef.current);
       return;
     }
 
     const normalizedQuery = query.trim();
 
     if (normalizedQuery.length === 0) {
-      setOptions(initialOptions);
+      searchRequestIdRef.current += 1;
+      setOptions(initialOptionsRef.current);
       return;
     }
 
+    const requestId = searchRequestIdRef.current + 1;
+    searchRequestIdRef.current = requestId;
+
     const timeoutId = window.setTimeout(() => {
       startSearchTransition(async () => {
-        const nextOptions = await onSearch(normalizedQuery);
-        setOptions(nextOptions);
+        await runSearch(normalizedQuery, requestId);
       });
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
-  }, [initialOptions, onSearch, open, query]);
+  }, [open, query, runSearch]);
 
   const visibleOptions = useMemo(() => {
     const currentValue = selectedOption?.value;
@@ -129,13 +151,8 @@ export function Combobox({
             </Button>
           </div>
 
-          <div className="max-h-72 overflow-auto rounded-[18px] border border-[color:var(--line)] bg-[color:var(--panel-strong)]">
-            {isSearching ? (
-              <div className="flex items-center gap-2 px-3 py-3 text-sm text-[color:var(--ink-soft)]">
-                <LoaderCircle className="size-4 animate-spin" />
-                <span>{messages.searching}</span>
-              </div>
-            ) : visibleOptions.length === 0 ? (
+          <div className="relative max-h-72 overflow-auto rounded-[18px] border border-[color:var(--line)] bg-[color:var(--panel-strong)]">
+            {visibleOptions.length === 0 ? (
               <div className="px-3 py-3 text-sm text-[color:var(--ink-soft)]">{messages.empty}</div>
             ) : (
               <div className="grid">
@@ -165,6 +182,12 @@ export function Combobox({
                 ))}
               </div>
             )}
+            {isSearching ? (
+              <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-2 rounded-full bg-[color:var(--panel)]/95 px-2 py-1 text-xs text-[color:var(--ink-soft)] shadow-sm">
+                <LoaderCircle className="size-3.5 animate-spin" />
+                <span>{messages.searching}</span>
+              </div>
+            ) : null}
           </div>
         </div>
       </PopoverContent>

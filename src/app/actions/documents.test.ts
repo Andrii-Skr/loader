@@ -17,6 +17,7 @@ const prismaState = vi.hoisted(() => ({
   documentCreate: vi.fn(),
   documentUpdate: vi.fn(),
   documentDelete: vi.fn(),
+  documentFindUnique: vi.fn(),
   userFindUnique: vi.fn(),
 }));
 
@@ -74,12 +75,12 @@ vi.mock("@/lib/prisma", () => ({
       create: prismaState.documentCreate,
       update: prismaState.documentUpdate,
       delete: prismaState.documentDelete,
-      findUnique: vi.fn(),
+      findUnique: prismaState.documentFindUnique,
     },
   },
 }));
 
-import { uploadInvoice } from "@/app/actions/documents";
+import { deleteDocument, uploadInvoice } from "@/app/actions/documents";
 
 describe("uploadInvoice", () => {
   beforeEach(() => {
@@ -95,6 +96,7 @@ describe("uploadInvoice", () => {
     prismaState.documentCreate.mockReset();
     prismaState.documentUpdate.mockReset();
     prismaState.documentDelete.mockReset();
+    prismaState.documentFindUnique.mockReset();
     prismaState.userFindUnique.mockReset();
 
     authMock.mockResolvedValue({
@@ -183,5 +185,30 @@ describe("uploadInvoice", () => {
         sourceFileName: "unknown.pdf",
       }),
     });
+  });
+
+  it("forbids document deletion for operators", async () => {
+    authMock.mockResolvedValue({ user: { id: 7, role: "OPERATOR" } });
+
+    await expect(deleteDocument({ documentId: 501, locale: "ru" })).resolves.toEqual({
+      errorKey: "forbidden",
+      success: false,
+    });
+
+    expect(prismaState.documentFindUnique).not.toHaveBeenCalled();
+    expect(prismaState.documentDelete).not.toHaveBeenCalled();
+  });
+
+  it("allows administrators to delete documents", async () => {
+    authMock.mockResolvedValue({ user: { id: 1, role: "ADMIN" } });
+    prismaState.documentFindUnique.mockResolvedValue({ id: 501, sourceFilePath: null });
+    prismaState.documentDelete.mockResolvedValue({ id: 501 });
+
+    await expect(deleteDocument({ documentId: 501, locale: "ru" })).resolves.toEqual({
+      errorKey: null,
+      success: true,
+    });
+
+    expect(prismaState.documentDelete).toHaveBeenCalledWith({ where: { id: 501 } });
   });
 });
