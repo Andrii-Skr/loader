@@ -47,16 +47,29 @@ public HTTPS endpoint.
    required TLS option (for example, `sslmode=require`) in the connection URL. Do not commit
    `.env.docker`.
 
-2. Apply schema migrations explicitly before the application update:
+2. Deploy with Make (the command applies migrations, then builds, starts, and health-checks the
+   application):
 
    ```bash
-   docker compose --env-file .env.docker --profile migrate run --rm migrate
+   make prod-deploy
    ```
 
-3. Build and start the application:
+   The Make targets use `.env.docker` by default. To use a file at another path, pass it explicitly:
 
    ```bash
-   docker compose --env-file .env.docker up -d --build app
+   make prod-deploy ENV_FILE=/etc/zenit-loader/production.env
+   ```
+
+   `scripts/deploy-prod.sh` is the underlying command and can also be invoked directly. Available
+   commands are `deploy`, `migrate`, `up`, `down`, `restart`, `logs`, and `status`.
+
+3. Common production operations:
+
+   ```bash
+   make prod-status
+   make prod-logs
+   make prod-migrate
+   make prod-down
    ```
 
 Uploaded PDFs are stored in the `uploads` named Docker volume and survive container recreation.
