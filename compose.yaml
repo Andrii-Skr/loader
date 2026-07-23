@@ -24,6 +24,9 @@ services:
       target: migrate
     env_file:
       - ${DOCKER_ENV_FILE:-.env.docker}
+    environment:
+      # The runtime user stays in DATABASE_URL; schema changes require the migration user.
+      DATABASE_URL: "${MIGRATION_DATABASE_URL:?MIGRATION_DATABASE_URL must be set in the Docker environment file}"
     restart: "no"
 
 volumes:

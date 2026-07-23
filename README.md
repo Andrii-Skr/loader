@@ -42,10 +42,12 @@ public HTTPS endpoint.
    cp .env.docker.example .env.docker
    ```
 
-   Set `DATABASE_URL` to the external database hostname or IP address. Do not use `127.0.0.1` or
-   `localhost`: from inside the container those addresses refer to the container itself. Include its
-   required TLS option (for example, `sslmode=require`) in the connection URL. Do not commit
-   `.env.docker`.
+   Set `DATABASE_URL` to the external database hostname or IP address for the runtime user, and
+   `MIGRATION_DATABASE_URL` to the same database and schema for the migration user. The migration
+   user needs the permissions to modify the `pdf_loader` schema; the runtime user does not. Do not
+   use `127.0.0.1` or `localhost`: from inside the container those addresses refer to the container
+   itself. Include any required TLS option (for example, `sslmode=require`) in both connection URLs.
+   Do not commit `.env.docker`.
 
 2. Deploy with Make (the command applies migrations, then builds, starts, and health-checks the
    application):
