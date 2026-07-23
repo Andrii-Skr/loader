@@ -16,6 +16,7 @@ Usage: ./scripts/deploy-prod.sh <command>
 Commands:
   deploy   Update from Git, apply migrations, and build, start, and health-check the app.
   migrate  Apply Prisma migrations only.
+  seed     Create or update the administrator defined by ADMIN_* variables.
   up       Build, start, and health-check the app without migrations.
   down     Stop and remove application containers (uploads volume is retained).
   restart  Restart the application container.
@@ -68,6 +69,10 @@ case "${1:-}" in
   migrate)
     require_runtime
     compose --profile migrate run --rm migrate
+    ;;
+  seed)
+    require_runtime
+    compose --profile seed run --rm --build seed
     ;;
   up)
     require_runtime

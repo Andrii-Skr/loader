@@ -35,6 +35,10 @@ COPY prisma.config.ts ./
 
 CMD ["pnpm", "prisma", "migrate", "deploy"]
 
+FROM builder AS seed
+
+CMD ["pnpm", "prisma", "db", "seed"]
+
 FROM base AS runner
 
 ENV NODE_ENV="production"

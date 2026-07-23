@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 ENV_FILE ?= .env.docker
 PROD_SCRIPT := ./scripts/deploy-prod.sh
 
-.PHONY: prod-deploy prod-up prod-migrate prod-down prod-restart prod-logs prod-status
+.PHONY: prod-deploy prod-up prod-migrate prod-seed prod-down prod-restart prod-logs prod-status
 
 prod-deploy:
 	DOCKER_ENV_FILE="$(ENV_FILE)" "$(PROD_SCRIPT)" deploy
@@ -13,6 +13,9 @@ prod-up:
 
 prod-migrate:
 	DOCKER_ENV_FILE="$(ENV_FILE)" "$(PROD_SCRIPT)" migrate
+
+prod-seed:
+	DOCKER_ENV_FILE="$(ENV_FILE)" "$(PROD_SCRIPT)" seed
 
 prod-down:
 	DOCKER_ENV_FILE="$(ENV_FILE)" "$(PROD_SCRIPT)" down

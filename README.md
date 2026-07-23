@@ -69,7 +69,7 @@ public HTTPS endpoint.
    ```
 
    `scripts/deploy-prod.sh` is the underlying command and can also be invoked directly. Available
-   commands are `deploy`, `migrate`, `up`, `down`, `restart`, `logs`, and `status`.
+   commands are `deploy`, `migrate`, `seed`, `up`, `down`, `restart`, `logs`, and `status`.
 
 3. Common production operations:
 
@@ -79,6 +79,16 @@ public HTTPS endpoint.
    make prod-migrate
    make prod-down
    ```
+
+4. Create or reset the administrator configured through `ADMIN_LOGIN`, `ADMIN_PASSWORD`, and the
+   optional `ADMIN_NAME` and `ADMIN_EMAIL` values in `.env.docker`:
+
+   ```bash
+   make prod-seed
+   ```
+
+   The command is safe to repeat: it updates the matching administrator instead of creating a
+   duplicate.
 
 Uploaded PDFs are stored in the `uploads` named Docker volume and survive container recreation.
 The `/api/health` endpoint reports ready only when the primary PostgreSQL connection succeeds.

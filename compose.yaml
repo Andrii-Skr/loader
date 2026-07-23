@@ -29,5 +29,16 @@ services:
       DATABASE_URL: "${MIGRATION_DATABASE_URL:?MIGRATION_DATABASE_URL must be set in the Docker environment file}"
     restart: "no"
 
+  seed:
+    profiles: ["seed"]
+    build:
+      context: .
+      target: seed
+    env_file:
+      - ${DOCKER_ENV_FILE:-.env.docker}
+    environment:
+      NODE_ENV: production
+    restart: "no"
+
 volumes:
   uploads:
