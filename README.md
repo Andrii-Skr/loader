@@ -49,11 +49,17 @@ public HTTPS endpoint.
    itself. Include any required TLS option (for example, `sslmode=require`) in both connection URLs.
    Do not commit `.env.docker`.
 
-2. Deploy with Make (the command applies migrations, then builds, starts, and health-checks the
-   application):
+2. Deploy with Make (the command updates the current Git branch with `git pull --ff-only`, applies
+   migrations, then builds, starts, and health-checks the application):
 
    ```bash
    make prod-deploy
+   ```
+
+   To deploy the files already present on the server without fetching Git updates, use:
+
+   ```bash
+   SKIP_GIT_PULL=1 make prod-deploy
    ```
 
    The Make targets use `.env.docker` by default. To use a file at another path, pass it explicitly:

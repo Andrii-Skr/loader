@@ -14,7 +14,7 @@ usage() {
 Usage: ./scripts/deploy-prod.sh <command>
 
 Commands:
-  deploy   Apply migrations and build, start, and health-check the app.
+  deploy   Update from Git, apply migrations, and build, start, and health-check the app.
   migrate  Apply Prisma migrations only.
   up       Build, start, and health-check the app without migrations.
   down     Stop and remove application containers (uploads volume is retained).
@@ -42,7 +42,19 @@ compose() {
     "$@"
 }
 
+update_source() {
+  if [[ "${SKIP_GIT_PULL:-0}" == "1" ]]; then
+    printf 'Skipping Git update because SKIP_GIT_PULL=1.\n'
+    return
+  fi
+
+  git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || fail "The project directory is not a Git repository: $PROJECT_DIR"
+  git -C "$PROJECT_DIR" pull --ff-only
+}
+
 deploy() {
+  update_source
   compose --profile migrate run --rm migrate
   compose up -d --build --wait app
   compose ps
