@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useRouter } from "@/i18n/navigation";
 import type { AppLocale } from "@/i18n/routing";
+import { passwordSchema } from "@/lib/auth/password-policy";
 
 type LoginFormValues = {
   login: string;
@@ -33,7 +34,7 @@ export function LoginForm({ locale }: { locale: AppLocale }) {
   const [isPending, startTransition] = useTransition();
   const loginSchema = z.object({
     login: z.string().min(3, t("errors.login")).max(64, t("errors.login")),
-    password: z.string().min(8, t("errors.password")),
+    password: passwordSchema(t("errors.password")),
   });
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),

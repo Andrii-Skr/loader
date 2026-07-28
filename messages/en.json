@@ -23,7 +23,8 @@
     "documentContourUnknown": "Unknown contour",
     "parserVersion": "Parser",
     "restrictedRoom": "Restricted ledger room",
-    "editionMappings": "Edition mappings"
+    "editionMappings": "Edition mappings",
+    "addUser": "Add user"
   },
   "Login": {
     "titleLine1": "Access to",
@@ -37,9 +38,40 @@
     "pending": "Checking access...",
     "errors": {
       "login": "Enter a login with at least 3 characters.",
-      "password": "Password must be at least 8 characters.",
+      "password": "Password must contain between 8 and 16 characters.",
       "invalidCredentials": "Invalid login or password.",
       "invalidInput": "Check login and password."
+    }
+  },
+  "UserCreation": {
+    "eyebrow": "Access management",
+    "title": "Create a user.",
+    "description": "Issue credentials and choose the level of access to the operating panel.",
+    "accessNote": "Only administrators can open this page and create accounts.",
+    "formTitle": "New account",
+    "formDescription": "The operator role is selected by default.",
+    "nameLabel": "Name",
+    "loginLabel": "Login",
+    "roleLabel": "Role",
+    "roleDescription": "Administrators have access to restricted management actions.",
+    "passwordLabel": "Password",
+    "passwordConfirmationLabel": "Confirm password",
+    "submit": "Create user",
+    "pending": "Creating...",
+    "success": "User created. The form is ready for another account.",
+    "roles": {
+      "OPERATOR": "Operator",
+      "ADMIN": "Administrator"
+    },
+    "errors": {
+      "name": "Enter a name up to 100 characters.",
+      "login": "Enter a login between 3 and 64 characters.",
+      "password": "Password must contain between 8 and 16 characters.",
+      "passwordConfirmation": "Passwords do not match.",
+      "duplicateLogin": "This login is already in use.",
+      "invalidInput": "Check the entered account details.",
+      "missingSession": "Your session was not found. Sign in again.",
+      "forbidden": "Only administrators can create users."
     }
   },
   "Dashboard": {

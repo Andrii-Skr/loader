@@ -5,11 +5,12 @@ import { z } from "zod";
 
 import { signIn } from "@/auth";
 import type { AppLocale } from "@/i18n/routing";
+import { passwordSchema } from "@/lib/auth/password-policy";
 import { appAction } from "@/utils/appAction";
 
 const loginSchema = z.object({
   login: z.string().min(3).max(64),
-  password: z.string().min(8),
+  password: passwordSchema(),
 });
 
 export type LoginActionResult = {

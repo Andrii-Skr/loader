@@ -4,11 +4,12 @@ import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 
 import { verifyPassword } from "@/lib/auth/password";
+import { passwordSchema } from "@/lib/auth/password-policy";
 import { prisma } from "@/lib/prisma";
 
 const credentialsSchema = z.object({
   login: z.string().min(3).max(64),
-  password: z.string().min(8),
+  password: passwordSchema(),
 });
 
 const parseNumericId = (value: unknown): number | null => {

@@ -67,6 +67,21 @@ export default async function LocalizedDashboardLayout({
                 system: common("themeSystem"),
               }}
             />
+            {user.role === "ADMIN" ? (
+              <div className="header-control header-control--action">
+                <div className="header-control__segmented header-control__segmented--action">
+                  <Button
+                    asChild
+                    className="header-control__chip header-control__chip--action"
+                    variant="ghost"
+                  >
+                    <Link href="/dashboard/users/new" locale={locale}>
+                      {common("addUser")}
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="header-control header-control--action">
               <div className="header-control__segmented header-control__segmented--action">
                 <form
