@@ -290,8 +290,22 @@ export const searchIssueNumberCandidates = async ({
     query: targetIssueNumber,
   });
   const normalizedTarget = normalizeIssueLookupText(targetIssueNumber);
+  const isManualSearch = Boolean(query?.trim());
+  const compactTarget = normalizedTarget.replace(/\s+/gu, "");
 
   return issues
+    .filter((issue) => {
+      if (!isManualSearch) {
+        return true;
+      }
+
+      const normalizedCandidate = normalizeIssueLookupText(issue.number);
+
+      return (
+        normalizedCandidate.includes(normalizedTarget) ||
+        normalizedCandidate.replace(/\s+/gu, "").includes(compactTarget)
+      );
+    })
     .map((issue) => {
       const normalizedCandidate = normalizeIssueLookupText(issue.number);
       const isExactMatch =

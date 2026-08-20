@@ -4,6 +4,7 @@ import { Check, ChevronsUpDown, LoaderCircle, X } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
+import { matchesNormalizedComboboxSearch } from "@/components/ui/combobox-search";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ export function Combobox({
   contentClassName,
   placeholder,
   selectedOption,
+  normalizedClientFilter = false,
   widthClassName,
 }: {
   disabled?: boolean;
@@ -42,6 +44,7 @@ export function Combobox({
   onSelect: (option: ComboboxOption | null) => void;
   placeholder: string;
   selectedOption: ComboboxOption | null;
+  normalizedClientFilter?: boolean;
   widthClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -71,6 +74,7 @@ export function Combobox({
     }
   }, [initialOptions, open, query]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Effect Events change identity on every render and must not be dependencies.
   useEffect(() => {
     if (!open) {
       searchRequestIdRef.current += 1;
@@ -97,15 +101,17 @@ export function Combobox({
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
-  }, [open, query, runSearch]);
+  }, [open, query]);
 
   const visibleOptions = useMemo(() => {
     const currentValue = selectedOption?.value;
 
     return options.filter(
-      (option) => !excludedValues?.has(option.value) || option.value === currentValue,
+      (option) =>
+        (!excludedValues?.has(option.value) || option.value === currentValue) &&
+        (!normalizedClientFilter || matchesNormalizedComboboxSearch(option.label, query)),
     );
-  }, [excludedValues, options, selectedOption?.value]);
+  }, [excludedValues, normalizedClientFilter, options, query, selectedOption?.value]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

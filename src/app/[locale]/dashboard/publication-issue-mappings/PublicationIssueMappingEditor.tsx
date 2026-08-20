@@ -248,10 +248,12 @@ export const PublicationIssueMappingEditor = forwardRef<
     }
 
     setServerMessage(null);
-    setIssueNumberCandidatesByEditionId((current) => ({
-      ...current,
-      [externalEditionId]: result.candidates,
-    }));
+    if (!query?.trim()) {
+      setIssueNumberCandidatesByEditionId((current) => ({
+        ...current,
+        [externalEditionId]: result.candidates,
+      }));
+    }
 
     return result.candidates;
   };
@@ -444,6 +446,7 @@ export const PublicationIssueMappingEditor = forwardRef<
           searching: t("searchPending"),
           searchPlaceholder: t("issueNumberSearchPlaceholder"),
         }}
+        normalizedClientFilter
         onSearch={async (query) => {
           if (externalEditionId === null) {
             return [];

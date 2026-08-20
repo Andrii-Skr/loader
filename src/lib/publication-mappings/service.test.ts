@@ -198,6 +198,38 @@ describe("searchIssueNumberCandidates", () => {
       externalIssueNumber: "01-25",
       isExactMatch: true,
     });
+    expect(candidates).toHaveLength(1);
+  });
+
+  it("filters manual searches by the typed issue-number fragment", async () => {
+    prismaMocks.publicationIssueFindUnique.mockResolvedValue({
+      id: 12,
+      publication: {
+        id: 3,
+        displayName: "Копейка. ТВ программа",
+      },
+      issueNumber: {
+        id: 4,
+        canonicalValue: "04-26",
+      },
+    });
+    externalRepositoryMocks.searchExternalIssueNumbersByEdition.mockResolvedValue([
+      { id: 30, number: "12-25" },
+      { id: 31, number: "02-23" },
+      { id: 32, number: "02-22(Сентябрь)" },
+      { id: 33, number: "02/21" },
+    ]);
+
+    const candidates = await searchIssueNumberCandidates({
+      publicationIssueId: 12,
+      externalEditionId: 77,
+      query: "02-2",
+    });
+
+    expect(candidates).toHaveLength(3);
+    expect(candidates.map((candidate) => candidate.externalIssueNumber)).toEqual(
+      expect.arrayContaining(["02-23", "02-22(Сентябрь)", "02/21"]),
+    );
   });
 });
 

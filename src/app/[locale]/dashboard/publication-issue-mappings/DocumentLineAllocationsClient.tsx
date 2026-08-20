@@ -320,6 +320,7 @@ function DocumentLineAllocationEditor({
                   searching: t("searchPending"),
                   searchPlaceholder: t("issueNumberSearchPlaceholder"),
                 }}
+                normalizedClientFilter
                 onSearch={async (query) => {
                   if (draft.externalEditionId === null) return [];
                   const result = line.publicationIssueId
