@@ -208,7 +208,8 @@
       "pdfReadFailed": "Не удалось прочитать текст из PDF",
       "pdfHasNoTextLayer": "В PDF нет читаемого текстового слоя. Нужен OCR.",
       "pdfOcrFailed": "OCR fallback завершился ошибкой",
-      "pdfOcrUnavailable": "OCR недоступен: не удалось загрузить языковые данные"
+      "pdfOcrUnavailable": "OCR недоступен: не удалось загрузить языковые данные",
+      "requestFailed": "Не удалось отправить файл. Проверьте его размер и повторите попытку."
     }
   },
   "PublicationMappings": {

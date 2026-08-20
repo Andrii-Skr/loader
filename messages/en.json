@@ -208,7 +208,8 @@
       "pdfReadFailed": "Could not read text from the PDF",
       "pdfHasNoTextLayer": "PDF does not contain a readable text layer. OCR is required.",
       "pdfOcrFailed": "OCR fallback failed",
-      "pdfOcrUnavailable": "OCR is unavailable because language data could not be loaded"
+      "pdfOcrUnavailable": "OCR is unavailable because language data could not be loaded",
+      "requestFailed": "The upload request failed. Check the file size and try again."
     }
   },
   "PublicationMappings": {

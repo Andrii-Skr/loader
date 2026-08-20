@@ -23,6 +23,16 @@ type UploadInvoiceValues = {
   pdf: File[];
 };
 
+type UploadActionResult = Awaited<ReturnType<typeof uploadInvoice>>;
+
+const combineUploadResults = (results: UploadActionResult[]): UploadActionResult => ({
+  errorKey: results.find((result) => result.errorKey)?.errorKey ?? null,
+  successCount: results.reduce((total, result) => total + result.successCount, 0),
+  failedCount: results.reduce((total, result) => total + result.failedCount, 0),
+  duplicateCount: results.reduce((total, result) => total + result.duplicateCount, 0),
+  results: results.flatMap((result) => result.results),
+});
+
 export function UploadInvoiceForm() {
   const router = useRouter();
   const t = useTranslations("UploadForm");
@@ -120,12 +130,28 @@ export function UploadInvoiceForm() {
     }
 
     startTransition(async () => {
-      const formData = new FormData();
+      const actionResults: UploadActionResult[] = [];
+
       for (const file of files) {
+        const formData = new FormData();
         formData.append("pdf", file);
+
+        try {
+          const actionResult = await uploadInvoice(formData);
+          actionResults.push(actionResult);
+
+          if (actionResult.errorKey) {
+            break;
+          }
+        } catch {
+          setResult({ error: t("messages.requestFailed"), success: null });
+          return;
+        }
       }
-      const actionResult = await uploadInvoice(formData);
+
+      const actionResult = combineUploadResults(actionResults);
       setResult(formatActionResult(actionResult));
+
       if (!actionResult.errorKey) {
         setSelectedFiles([]);
         form.reset();
