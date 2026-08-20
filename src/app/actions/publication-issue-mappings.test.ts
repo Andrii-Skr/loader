@@ -79,7 +79,7 @@ describe("saveDocumentLineAllocations", () => {
     applyPublicationMappingReplacementsMock.mockReset();
     preparePublicationMappingReplacementMock.mockReset();
     getExternalIssuePairsByIdsMock.mockReset();
-    authMock.mockResolvedValue({ user: { role: "ADMIN" } });
+    authMock.mockResolvedValue({ user: { role: "OPERATOR" } });
     preparePublicationMappingReplacementMock.mockResolvedValue({
       publicationId: 3,
       externalEditions: [],

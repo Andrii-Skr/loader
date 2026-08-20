@@ -1,5 +1,4 @@
 import { getTranslations, setRequestLocale } from "next-intl/server";
-import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { auth } from "@/auth";
@@ -45,10 +44,6 @@ export default async function PublicationIssueMappingsPage({
 
   if (!session?.user) {
     redirect({ href: "/login", locale });
-  }
-
-  if (!session || session.user.role !== "ADMIN") {
-    notFound();
   }
 
   const parsedSearchParams = searchParamsSchema.safeParse(await searchParams);

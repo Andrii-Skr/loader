@@ -176,8 +176,6 @@ export const deleteDocument = async ({
     },
     {
       requireAuth: true,
-      roles: ["ADMIN"],
-      onForbidden: () => ({ errorKey: "forbidden", success: false }),
       schema: deleteDocumentSchema,
       onUnauthorized: () => ({ errorKey: "missingSession", success: false }),
       onInvalidInput: () => ({ errorKey: "invalidInput", success: false }),

@@ -112,7 +112,7 @@ export default async function DocumentDetailsPage({
     getTranslations({ locale, namespace: "Common" }),
     getFormatter({ locale }),
   ]);
-  const canManageMappings = session?.user?.role === "ADMIN";
+  const canUseWorkspace = Boolean(session?.user);
 
   if (!document) {
     notFound();
@@ -233,7 +233,7 @@ export default async function DocumentDetailsPage({
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Badge>{common("records", { count: document.lineItems.length })}</Badge>
-            {canManageMappings ? (
+            {canUseWorkspace ? (
               <Button asChild size="sm" variant="outline">
                 <Link
                   href={{

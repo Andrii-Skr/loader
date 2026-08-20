@@ -268,7 +268,11 @@ const getCanonicalExternalIssuePairs = async (
   return pairs.every((pair) => pairsByKey.has(externalIssuePairKey(pair))) ? pairsByKey : null;
 };
 
-const withAdminAction = <TInput, TParsed, TResult extends { errorKey: SharedErrorKey | null }>(
+const withAuthenticatedAction = <
+  TInput,
+  TParsed,
+  TResult extends { errorKey: SharedErrorKey | null },
+>(
   handler: (input: TParsed) => Promise<TResult>,
   options: {
     schema: AppActionSchema<TInput, TParsed>;
@@ -278,21 +282,16 @@ const withAdminAction = <TInput, TParsed, TResult extends { errorKey: SharedErro
   appAction<TInput, TParsed, TResult>(handler, {
     ...options,
     requireAuth: true,
-    roles: ["ADMIN"],
     onUnauthorized: () =>
       ({
         errorKey: "missingSession",
-      }) as TResult,
-    onForbidden: () =>
-      ({
-        errorKey: "forbidden",
       }) as TResult,
   });
 
 export const searchPublicationMappingCandidates = async (
   input: z.input<typeof searchCandidatesSchema>,
 ): Promise<SearchPublicationCandidatesResult> =>
-  withAdminAction<
+  withAuthenticatedAction<
     z.input<typeof searchCandidatesSchema>,
     z.infer<typeof searchCandidatesSchema>,
     SearchPublicationCandidatesResult
@@ -325,7 +324,7 @@ export const searchPublicationMappingCandidates = async (
 export const searchIssueNumberMappingCandidates = async (
   input: z.input<typeof searchCandidatesSchema>,
 ): Promise<SearchIssueNumberCandidatesResult> =>
-  withAdminAction<
+  withAuthenticatedAction<
     z.input<typeof searchCandidatesSchema>,
     z.infer<typeof searchCandidatesSchema>,
     SearchIssueNumberCandidatesResult
@@ -359,7 +358,7 @@ export const searchIssueNumberMappingCandidates = async (
 export const savePublicationIssueMappingRegistry = async (
   input: z.input<typeof saveRegistrySchema>,
 ): Promise<SavePublicationIssueMappingRegistryResult> =>
-  withAdminAction<
+  withAuthenticatedAction<
     z.input<typeof saveRegistrySchema>,
     z.infer<typeof saveRegistrySchema>,
     SavePublicationIssueMappingRegistryResult
@@ -608,7 +607,7 @@ export const savePublicationIssueMappingRegistry = async (
 export const loadPublicationIssueOccurrences = async (
   input: z.input<typeof loadOccurrencesSchema>,
 ): Promise<LoadPublicationIssueOccurrencesResult> =>
-  withAdminAction<
+  withAuthenticatedAction<
     z.input<typeof loadOccurrencesSchema>,
     z.infer<typeof loadOccurrencesSchema>,
     LoadPublicationIssueOccurrencesResult
@@ -638,7 +637,7 @@ export const loadPublicationIssueOccurrences = async (
 export const searchDocumentAllocationEditions = async (
   input: z.input<typeof searchExternalEditionsSchema>,
 ): Promise<SearchExternalEditionsResult> =>
-  withAdminAction<
+  withAuthenticatedAction<
     z.input<typeof searchExternalEditionsSchema>,
     z.infer<typeof searchExternalEditionsSchema>,
     SearchExternalEditionsResult
@@ -666,7 +665,7 @@ export const searchDocumentAllocationEditions = async (
 export const searchDocumentAllocationIssues = async (
   input: z.input<typeof searchExternalIssuesSchema>,
 ): Promise<SearchExternalIssuesResult> =>
-  withAdminAction<
+  withAuthenticatedAction<
     z.input<typeof searchExternalIssuesSchema>,
     z.infer<typeof searchExternalIssuesSchema>,
     SearchExternalIssuesResult
@@ -697,7 +696,7 @@ export const searchDocumentAllocationIssues = async (
 export const saveDocumentLineAllocations = async (
   input: z.input<typeof saveDocumentLineAllocationsSchema>,
 ): Promise<SavePublicationIssueMappingRegistryResult> =>
-  withAdminAction<
+  withAuthenticatedAction<
     z.input<typeof saveDocumentLineAllocationsSchema>,
     z.infer<typeof saveDocumentLineAllocationsSchema>,
     SavePublicationIssueMappingRegistryResult

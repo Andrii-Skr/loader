@@ -187,16 +187,17 @@ describe("uploadInvoice", () => {
     });
   });
 
-  it("forbids document deletion for operators", async () => {
+  it("allows operators to delete documents", async () => {
     authMock.mockResolvedValue({ user: { id: 7, role: "OPERATOR" } });
+    prismaState.documentFindUnique.mockResolvedValue({ id: 501, sourceFilePath: null });
+    prismaState.documentDelete.mockResolvedValue({ id: 501 });
 
     await expect(deleteDocument({ documentId: 501, locale: "ru" })).resolves.toEqual({
-      errorKey: "forbidden",
-      success: false,
+      errorKey: null,
+      success: true,
     });
 
-    expect(prismaState.documentFindUnique).not.toHaveBeenCalled();
-    expect(prismaState.documentDelete).not.toHaveBeenCalled();
+    expect(prismaState.documentDelete).toHaveBeenCalledWith({ where: { id: 501 } });
   });
 
   it("allows administrators to delete documents", async () => {

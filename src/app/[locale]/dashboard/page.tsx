@@ -94,7 +94,7 @@ export default async function LocalizedDashboardPage({
     getTranslations({ locale, namespace: "Common" }),
     getFormatter({ locale }),
   ]);
-  const canManageMappings = session?.user?.role === "ADMIN";
+  const canUseWorkspace = Boolean(session?.user);
 
   const mappingStatusLabels: Record<MappingStatusKey, string> = {
     unparsed: documentDetails("mappingStatus.unparsed"),
@@ -188,7 +188,7 @@ export default async function LocalizedDashboardPage({
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Badge>{common("records", { count: documents.length })}</Badge>
-            {canManageMappings ? (
+            {canUseWorkspace ? (
               <Button asChild size="sm" variant="outline">
                 <Link
                   href={{
@@ -207,7 +207,7 @@ export default async function LocalizedDashboardPage({
         <DocumentRegistry
           actionableDocuments={actionableDocuments}
           actionableSectionTitle={t("actionableSectionTitle")}
-          canDeleteDocuments={canManageMappings}
+          canDeleteDocuments={canUseWorkspace}
           completedGroups={completedGroups}
           completedMonthToggleLabel={t("completedMonthToggle")}
           completedSectionTitle={t("completedSectionTitle")}
