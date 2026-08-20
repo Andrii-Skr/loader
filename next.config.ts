@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
     },
   },
   output: "standalone",
+  outputFileTracingIncludes: {
+    "/*": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+  },
   serverExternalPackages: ["@napi-rs/canvas", "tesseract.js", "pdfjs-dist"],
 };
 
