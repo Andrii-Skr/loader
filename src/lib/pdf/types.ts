@@ -2,7 +2,7 @@ export type DocumentContour = "UA" | "RU";
 
 export type ParsedParty = {
   name: string;
-  taxId: string;
+  taxId: string | null;
   kpp: string | null;
 };
 

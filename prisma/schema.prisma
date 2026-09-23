@@ -9,102 +9,144 @@ datasource db {
 }
 
 model Supplier {
-  id          Int        @id @default(autoincrement())
-  name        String
-  taxId       String     @unique @map("tax_id")
-  kpp         String?    @map("kpp")
-  documents   Document[]
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
+  id        Int        @id @default(autoincrement())
+  name      String
+  taxId     String     @unique @map("tax_id")
+  kpp       String?    @map("kpp")
+  documents Document[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
 
   @@map("suppliers")
   @@schema("pdf_loader")
 }
 
 model Recipient {
-  id          Int        @id @default(autoincrement())
-  name        String
-  taxId       String     @unique @map("tax_id")
-  kpp         String?    @map("kpp")
-  documents   Document[]
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
+  id        Int        @id @default(autoincrement())
+  name      String
+  taxId     String     @unique @map("tax_id")
+  kpp       String?    @map("kpp")
+  documents Document[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
 
   @@map("recipients")
   @@schema("pdf_loader")
 }
 
 model Document {
-  id                 Int                @id @default(autoincrement())
-  sourceFileName     String             @map("source_file_name")
-  sourceFilePath     String?            @map("source_file_path")
-  documentContour    DocumentContour?   @map("document_contour")
-  parserVersion      String             @default("vat-invoice-ua-v1") @map("parser_version")
-  documentType       String?            @map("document_type")
-  documentNumber     String?            @map("document_number")
-  documentDate       DateTime?          @map("document_date")
-  supplierId         Int?               @map("supplier_id")
-  recipientId        Int?               @map("recipient_id")
-  totalAmount        Decimal?           @db.Decimal(15, 2) @map("total_amount")
-  vatAmount          Decimal?           @db.Decimal(15, 2) @map("vat_amount")
-  baseAmount         Decimal?           @db.Decimal(15, 2) @map("base_amount")
-  currency           String             @default("UAH")
-  rawText            String?            @db.Text @map("raw_text")
-  extractionStatus   DocumentStatus     @default(PENDING) @map("extraction_status")
-  reviewRequired     Boolean            @default(false) @map("review_required")
-  extractedAt        DateTime?          @map("extracted_at")
-  uploadedById       Int?               @map("uploaded_by_id")
-  createdAt          DateTime           @default(now()) @map("created_at")
-  updatedAt          DateTime           @updatedAt @map("updated_at")
-  supplier           Supplier?          @relation(fields: [supplierId], references: [id])
-  recipient          Recipient?         @relation(fields: [recipientId], references: [id])
-  uploadedBy         User?              @relation(fields: [uploadedById], references: [id])
-  lineItems          SpecialDocument[]
+  id                Int                   @id @default(autoincrement())
+  sourceFileName    String                @map("source_file_name")
+  sourceFilePath    String?               @map("source_file_path")
+  documentContour   DocumentContour?      @map("document_contour")
+  parserVersion     String                @default("vat-invoice-ua-v1") @map("parser_version")
+  documentType      String?               @map("document_type")
+  documentTypeId    Int                   @map("document_type_id")
+  documentNumber    String?               @map("document_number")
+  documentDate      DateTime?             @map("document_date")
+  supplierId        Int?                  @map("supplier_id")
+  recipientId       Int?                  @map("recipient_id")
+  totalAmount       Decimal?              @map("total_amount") @db.Decimal(15, 2)
+  vatAmount         Decimal?              @map("vat_amount") @db.Decimal(15, 2)
+  baseAmount        Decimal?              @map("base_amount") @db.Decimal(15, 2)
+  currency          String                @default("UAH")
+  rawText           String?               @map("raw_text") @db.Text
+  extractionStatus  DocumentStatus        @default(PENDING) @map("extraction_status")
+  reviewRequired    Boolean               @default(false) @map("review_required")
+  hasTaxInvoice     Boolean               @default(false) @map("has_tax_invoice")
+  contentHash       String?               @map("content_hash")
+  revision          Int                   @default(1)
+  isCurrent         Boolean               @default(true) @map("is_current")
+  supersedesId      Int?                  @map("supersedes_id")
+  taxCoverageStatus TaxCoverageStatus     @default(NOT_APPLICABLE) @map("tax_coverage_status")
+  extractedAt       DateTime?             @map("extracted_at")
+  uploadedById      Int?                  @map("uploaded_by_id")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+  supplier          Supplier?             @relation(fields: [supplierId], references: [id])
+  recipient         Recipient?            @relation(fields: [recipientId], references: [id])
+  uploadedBy        User?                 @relation(fields: [uploadedById], references: [id])
+  type              DocumentType          @relation(fields: [documentTypeId], references: [id])
+  supersedes        Document?             @relation("DocumentRevisions", fields: [supersedesId], references: [id], onDelete: SetNull)
+  replacements      Document[]            @relation("DocumentRevisions")
+  lineItems         SpecialDocument[]
+  invoiceCoverages  DocumentTaxCoverage[] @relation("InvoiceCoverages")
+  taxCoverages      DocumentTaxCoverage[] @relation("TaxInvoiceCoverages")
 
-  @@unique([documentContour, documentNumber, documentDate, supplierId], map: "documents_contour_number_date_supplier_key")
+  @@unique([documentTypeId, documentContour, documentNumber, documentDate, supplierId, revision], map: "documents_type_contour_number_date_supplier_revision_key")
   @@index([supplierId])
   @@index([recipientId])
   @@index([uploadedById])
   @@index([documentDate])
   @@index([documentContour])
+  @@index([documentTypeId])
+  @@index([isCurrent])
+  @@index([contentHash])
   @@map("documents")
   @@schema("pdf_loader")
 }
 
+model DocumentType {
+  id        Int        @id
+  name      String     @unique
+  documents Document[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@map("document_types")
+  @@schema("pdf_loader")
+}
+
+model DocumentTaxCoverage {
+  id                   Int      @id @default(autoincrement())
+  invoiceDocumentId    Int      @map("invoice_document_id")
+  taxInvoiceDocumentId Int      @unique @map("tax_invoice_document_id")
+  isAutomatic          Boolean  @default(false) @map("is_automatic")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  invoiceDocument      Document @relation("InvoiceCoverages", fields: [invoiceDocumentId], references: [id], onDelete: Cascade)
+  taxInvoiceDocument   Document @relation("TaxInvoiceCoverages", fields: [taxInvoiceDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceDocumentId, taxInvoiceDocumentId], map: "document_tax_coverages_invoice_tax_key")
+  @@index([invoiceDocumentId])
+  @@map("document_tax_coverages")
+  @@schema("pdf_loader")
+}
+
 model SpecialDocument {
-  id                 Int                           @id @default(autoincrement())
-  documentId         Int                           @map("document_id")
-  lineNo             Int                           @map("line_no")
-  description        String
-  publicationIssueId Int?                          @map("publication_issue_id")
-  publicationIssueConfirmedAt DateTime? @map("publication_issue_confirmed_at")
-  matchedExternalEditionId Int?                    @map("matched_external_edition_id")
-  matchedExternalIssueId Int?                      @map("matched_external_issue_id")
-  matchedExternalIssueNumber String?               @map("matched_external_issue_number")
-  hasMultipleExternalMatches Boolean               @default(false) @map("has_multiple_external_matches")
-  externalMatchCount      Int                      @default(0) @map("external_match_count")
-  sourceRowCode      String?                       @map("source_row_code")
-  serviceCode        String?                       @map("service_code")
-  itemTypeCode       String?                       @map("item_type_code")
-  unitName           String?                       @map("unit_name")
-  unitCode           String?                       @map("unit_code")
-  quantity           Decimal                       @db.Decimal(15, 3)
-  unitPrice          Decimal                       @db.Decimal(15, 2) @map("unit_price")
-  vatRate            String?                       @map("vat_rate")
-  benefitCode        String?                       @map("benefit_code")
-  lineBaseAmount     Decimal                       @db.Decimal(15, 2) @map("line_base_amount")
-  lineVatAmount      Decimal                       @db.Decimal(15, 2) @map("line_vat_amount")
-  exciseAmount       Decimal?                      @db.Decimal(15, 2) @map("excise_amount")
-  lineTotalAmount    Decimal?                      @db.Decimal(15, 2) @map("line_total_amount")
-  countryCode        String?                       @map("country_code")
-  countryName        String?                       @map("country_name")
-  customsDeclarationNumber String?                 @map("customs_declaration_number")
-  rawRowText         String?                       @db.Text @map("raw_row_text")
-  createdAt          DateTime                      @default(now()) @map("created_at")
-  updatedAt          DateTime                      @updatedAt @map("updated_at")
-  document           Document                      @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  publicationIssue   PublicationIssue?             @relation(fields: [publicationIssueId], references: [id], onDelete: SetNull)
-  externalMatches    SpecialDocumentExternalMatch[]
+  id                          Int                            @id @default(autoincrement())
+  documentId                  Int                            @map("document_id")
+  lineNo                      Int                            @map("line_no")
+  description                 String
+  publicationIssueId          Int?                           @map("publication_issue_id")
+  publicationIssueConfirmedAt DateTime?                      @map("publication_issue_confirmed_at")
+  matchedExternalEditionId    Int?                           @map("matched_external_edition_id")
+  matchedExternalIssueId      Int?                           @map("matched_external_issue_id")
+  matchedExternalIssueNumber  String?                        @map("matched_external_issue_number")
+  hasMultipleExternalMatches  Boolean                        @default(false) @map("has_multiple_external_matches")
+  externalMatchCount          Int                            @default(0) @map("external_match_count")
+  sourceRowCode               String?                        @map("source_row_code")
+  serviceCode                 String?                        @map("service_code")
+  itemTypeCode                String?                        @map("item_type_code")
+  unitName                    String?                        @map("unit_name")
+  unitCode                    String?                        @map("unit_code")
+  quantity                    Decimal                        @db.Decimal(15, 3)
+  unitPrice                   Decimal                        @map("unit_price") @db.Decimal(15, 2)
+  vatRate                     String?                        @map("vat_rate")
+  benefitCode                 String?                        @map("benefit_code")
+  lineBaseAmount              Decimal                        @map("line_base_amount") @db.Decimal(15, 2)
+  lineVatAmount               Decimal                        @map("line_vat_amount") @db.Decimal(15, 2)
+  exciseAmount                Decimal?                       @map("excise_amount") @db.Decimal(15, 2)
+  lineTotalAmount             Decimal?                       @map("line_total_amount") @db.Decimal(15, 2)
+  countryCode                 String?                        @map("country_code")
+  countryName                 String?                        @map("country_name")
+  customsDeclarationNumber    String?                        @map("customs_declaration_number")
+  rawRowText                  String?                        @map("raw_row_text") @db.Text
+  createdAt                   DateTime                       @default(now()) @map("created_at")
+  updatedAt                   DateTime                       @updatedAt @map("updated_at")
+  document                    Document                       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  publicationIssue            PublicationIssue?              @relation(fields: [publicationIssueId], references: [id], onDelete: SetNull)
+  externalMatches             SpecialDocumentExternalMatch[]
 
   @@unique([documentId, lineNo], map: "special_documents_document_line_key")
   @@index([documentId])
@@ -121,10 +163,10 @@ model SpecialDocumentExternalMatch {
   externalIssueId     Int?            @map("external_issue_id")
   externalIssueNumber String?         @map("external_issue_number")
   quantity            Decimal         @db.Decimal(15, 3)
-  unitPrice           Decimal?        @db.Decimal(15, 2) @map("unit_price")
-  lineBaseAmount      Decimal?        @db.Decimal(15, 2) @map("line_base_amount")
-  lineVatAmount       Decimal?        @db.Decimal(15, 2) @map("line_vat_amount")
-  lineTotalAmount     Decimal?        @db.Decimal(15, 2) @map("line_total_amount")
+  unitPrice           Decimal?        @map("unit_price") @db.Decimal(15, 2)
+  lineBaseAmount      Decimal?        @map("line_base_amount") @db.Decimal(15, 2)
+  lineVatAmount       Decimal?        @map("line_vat_amount") @db.Decimal(15, 2)
+  lineTotalAmount     Decimal?        @map("line_total_amount") @db.Decimal(15, 2)
   currency            String          @default("UAH")
   isPrimary           Boolean         @default(false) @map("is_primary")
   createdAt           DateTime        @default(now()) @map("created_at")
@@ -139,11 +181,11 @@ model SpecialDocumentExternalMatch {
 }
 
 model Publication {
-  id                Int                @id @default(autoincrement())
-  displayName       String             @map("display_name")
-  normalizedName    String             @unique @map("normalized_name")
-  createdAt         DateTime           @default(now()) @map("created_at")
-  updatedAt         DateTime           @updatedAt @map("updated_at")
+  id                Int                  @id @default(autoincrement())
+  displayName       String               @map("display_name")
+  normalizedName    String               @unique @map("normalized_name")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
   publicationIssues PublicationIssue[]
   mappings          PublicationMapping[]
 
@@ -159,20 +201,19 @@ model IssueNumber {
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   publicationIssues PublicationIssue[]
-  mappings          IssueNumberMapping[]
 
   @@map("issue_numbers")
   @@schema("pdf_loader")
 }
 
 model PublicationIssue {
-  id            Int              @id @default(autoincrement())
-  publicationId Int              @map("publication_id")
-  issueNumberId Int              @map("issue_number_id")
-  createdAt     DateTime         @default(now()) @map("created_at")
-  updatedAt     DateTime         @updatedAt @map("updated_at")
-  publication   Publication      @relation(fields: [publicationId], references: [id], onDelete: Cascade)
-  issueNumber   IssueNumber      @relation(fields: [issueNumberId], references: [id], onDelete: Cascade)
+  id            Int               @id @default(autoincrement())
+  publicationId Int               @map("publication_id")
+  issueNumberId Int               @map("issue_number_id")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  publication   Publication       @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  issueNumber   IssueNumber       @relation(fields: [issueNumberId], references: [id], onDelete: Cascade)
   lineItems     SpecialDocument[]
 
   @@unique([publicationId, issueNumberId], map: "publication_issues_publication_issue_number_key")
@@ -183,28 +224,27 @@ model PublicationIssue {
 }
 
 model ExternalEditionSource {
-  id                Int                  @id @default(autoincrement())
-  code              String               @unique
-  displayName       String               @map("display_name")
-  schemaName        String               @map("schema_name")
-  createdAt         DateTime             @default(now()) @map("created_at")
-  updatedAt         DateTime             @updatedAt @map("updated_at")
+  id                  Int                  @id @default(autoincrement())
+  code                String               @unique
+  displayName         String               @map("display_name")
+  schemaName          String               @map("schema_name")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
   publicationMappings PublicationMapping[]
-  issueNumberMappings IssueNumberMapping[]
 
   @@map("external_edition_sources")
   @@schema("pdf_loader")
 }
 
 model PublicationMapping {
-  id                  Int                  @id @default(autoincrement())
-  publicationId       Int                  @map("publication_id")
-  sourceId            Int                  @map("source_id")
-  externalEditionId   Int                  @map("external_edition_id")
-  externalEditionName String               @map("external_edition_name")
-  createdAt           DateTime             @default(now()) @map("created_at")
-  updatedAt           DateTime             @updatedAt @map("updated_at")
-  publication         Publication          @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  id                  Int                   @id @default(autoincrement())
+  publicationId       Int                   @map("publication_id")
+  sourceId            Int                   @map("source_id")
+  externalEditionId   Int                   @map("external_edition_id")
+  externalEditionName String                @map("external_edition_name")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+  publication         Publication           @relation(fields: [publicationId], references: [id], onDelete: Cascade)
   source              ExternalEditionSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 
   @@unique([publicationId, sourceId, externalEditionId], map: "publication_mappings_pub_source_ext_edition_key")
@@ -212,25 +252,6 @@ model PublicationMapping {
   @@index([sourceId])
   @@index([externalEditionId])
   @@map("publication_mappings")
-  @@schema("pdf_loader")
-}
-
-model IssueNumberMapping {
-  id                  Int                  @id @default(autoincrement())
-  issueNumberId       Int                  @map("issue_number_id")
-  sourceId            Int                  @map("source_id")
-  externalIssueId     Int                  @map("external_issue_id")
-  externalIssueNumber String               @map("external_issue_number")
-  createdAt           DateTime             @default(now()) @map("created_at")
-  updatedAt           DateTime             @updatedAt @map("updated_at")
-  issueNumber         IssueNumber          @relation(fields: [issueNumberId], references: [id], onDelete: Cascade)
-  source              ExternalEditionSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-
-  @@unique([issueNumberId, sourceId, externalIssueId], map: "issue_number_mappings_issue_source_ext_issue_key")
-  @@index([issueNumberId])
-  @@index([sourceId])
-  @@index([externalIssueId])
-  @@map("issue_number_mappings")
   @@schema("pdf_loader")
 }
 
@@ -250,39 +271,48 @@ enum DocumentContour {
   @@schema("pdf_loader")
 }
 
+enum TaxCoverageStatus {
+  NOT_APPLICABLE
+  NO_CANDIDATES
+  NEEDS_SELECTION
+  MATCHED
+
+  @@schema("pdf_loader")
+}
+
 model User {
-  id             Int       @id @default(autoincrement())
-  name           String?
-  login          String    @unique
-  email          String?   @unique
-  passwordHash   String?   @map("password_hash")
-  role           UserRole  @default(OPERATOR)
-  emailVerified  DateTime? @map("email_verified")
-  image          String?
-  accounts       Account[]
-  sessions       Session[]
-  uploadedDocs   Document[]
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  id            Int        @id @default(autoincrement())
+  name          String?
+  login         String     @unique
+  email         String?    @unique
+  passwordHash  String?    @map("password_hash")
+  role          UserRole   @default(OPERATOR)
+  emailVerified DateTime?  @map("email_verified")
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  uploadedDocs  Document[]
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
 
   @@map("users")
   @@schema("pdf_loader")
 }
 
 model Account {
-  id                 Int      @id @default(autoincrement())
-  userId             Int      @map("user_id")
-  type               String
-  provider           String
-  providerAccountId  String   @map("provider_account_id")
-  refreshToken       String?  @db.Text @map("refresh_token")
-  accessToken        String?  @db.Text @map("access_token")
-  expiresAt          Int?     @map("expires_at")
-  tokenType          String?  @map("token_type")
-  scope              String?
-  idToken            String?  @db.Text @map("id_token")
-  sessionState       String?  @map("session_state")
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                Int     @id @default(autoincrement())
+  userId            Int     @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refreshToken      String? @map("refresh_token") @db.Text
+  accessToken       String? @map("access_token") @db.Text
+  expiresAt         Int?    @map("expires_at")
+  tokenType         String? @map("token_type")
+  scope             String?
+  idToken           String? @map("id_token") @db.Text
+  sessionState      String? @map("session_state")
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@index([userId])

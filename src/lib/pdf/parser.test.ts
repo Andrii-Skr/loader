@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { parseUaInvoiceDocument } from "@/lib/pdf/invoice-document-parser";
 import {
   canonicalizeIssueNumber,
+  detectAndParseDocument,
   detectAndParseInvoice,
   detectVatInvoiceRuV1,
   detectVatInvoiceUaV1,
@@ -70,6 +72,65 @@ describe("invoice parser registry", () => {
     expect(() => detectAndParseInvoice("just a random text file")).toThrow(
       /supported invoice contour/i,
     );
+  });
+
+  it("parses a regular invoice that mentions value-added tax", () => {
+    const text = `Рахунок № 1 від 1 січня 2026 р.
+Постачальник: ТОВ Альфа
+Покупець: ТОВ Бета
+№ Найменування робіт, послуг
+1 Газета № 1 1 шт 10,00 10,00
+Всього: 10,00
+Всього з ПДВ: 12,00
+Сума податку на додану вартість: 2,00`;
+
+    expect(detectVatInvoiceUaV1(text)).toBe(0);
+    expect(detectAndParseDocument(text)).toMatchObject({
+      documentTypeId: 2,
+      parsed: { documentNumber: "1" },
+    });
+  });
+
+  it("parses a regular invoice whose line mentions a tax invoice number", () => {
+    const text = `Рахунок № 1 від 1 січня 2026 р.
+Постачальник: ТОВ Альфа
+Покупець: ТОВ Бета
+№ Найменування робіт, послуг
+1 Оформлення Податкова накладна 123 1 шт 10,00 10,00
+Всього: 10,00
+Всього з ПДВ: 12,00
+Сума податку на додану вартість: 2,00`;
+
+    expect(detectVatInvoiceUaV1(text)).toBe(0);
+    expect(detectAndParseDocument(text)).toMatchObject({
+      documentTypeId: 2,
+      parsed: { documentNumber: "1" },
+    });
+  });
+});
+
+describe("parseUaInvoiceDocument", () => {
+  it("extracts act counterparties and tax IDs from their requisites", () => {
+    const parsed = parseUaInvoiceDocument(`АКТ надання послуг № 153 від 30 квітня 2026 р.
+Ми, що нижче підписалися, представник Замовника ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ВИДАВНИЦТВО "КУЗЯ" Директор Босенко Едуард Васильович, з одного боку, і представник Виконавця ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ПОЛІПРІНТ" БУРАКОВ Андрій Валентинович, ген.директор, з іншого боку.
+№ Найменування робіт, послуг Кіл-сть Од. Ціна без ПДВ Сума без ПДВ
+1 Послуга друку газети "Тещин пиріг" № 5 1 850 шт 10,8000000000 19 980,00
+Всього: 19 980,00
+Сума ПДВ: 3 996,00
+Всього із ПДВ: 23 976,00
+Від Виконавця Від Замовника
+ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ПОЛІПРІНТ", код за ЄДРПОУ 32108259, ІПН 321082526548, п/р UA203052990000026008006803734
+ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ВИДАВНИЦТВО "КУЗЯ", код за ЄДРПОУ 43169696, ІПН 431696926542, п/р UA683348510000000002600893366`);
+
+    expect(parsed.supplier).toMatchObject({
+      name: 'ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ПОЛІПРІНТ"',
+      taxId: "321082526548",
+    });
+    expect(parsed.recipient).toMatchObject({
+      name: 'ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ВИДАВНИЦТВО "КУЗЯ"',
+      taxId: "431696926542",
+    });
+    expect(parsed.lineItems).toHaveLength(1);
   });
 });
 
@@ -298,9 +359,7 @@ describe("parseVatInvoiceUaV1", () => {
     expect(parsed.documentDate).toBe("10.04.2026");
     expect(parsed.documentNumber).toBe("18");
     expect(parsed.supplier.name).toContain("ПОЛІПРІНТ");
-    expect(parsed.recipient.name).toBe(
-      'ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ВИДАВНИЦТВО "КУЗЯ"',
-    );
+    expect(parsed.recipient.name).toBe('"КУЗЯ"');
     expect(parsed.supplier.taxId).toBe("321082526548");
     expect(parsed.recipient.taxId).toBe("431696926542");
     expect(parsed.totalAmount).toBe("37800.00");
@@ -337,10 +396,8 @@ VI Усього обсяги постачання за основною став
     );
 
     expect(parsed.documentType).toBe("Податкова накладна");
-    expect(parsed.supplier.name).toBe('ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ПОЛІПРІНТ"');
-    expect(parsed.recipient.name).toBe(
-      'ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ВИДАВНИЦТВО "КУЗЯ"',
-    );
+    expect(parsed.supplier.name).toBe('"ПОЛІПРІНТ"');
+    expect(parsed.recipient.name).toBe('"КУЗЯ"');
     expect(parsed.supplier.taxId).toBe("321082526548");
     expect(parsed.recipient.taxId).toBe("431696926542");
   });
@@ -368,7 +425,7 @@ VI Усього обсяги постачання за основною став
     expect(parsed.documentNumber).toBe("27");
     expect(parsed.documentDate).toBe("09.04.2026");
     expect(parsed.supplier.name).toBe('ТОВ "ДРУКАРНЯ 21"');
-    expect(parsed.recipient.name).toBe('ПРИВАТНЕ ПІДПРИЄМСТВО "АЛЬФА"');
+    expect(parsed.recipient.name).toBe('"АЛЬФА"');
   });
 
   it("extracts parties when recipient legal form is mixed-case or OCR-degraded", () => {
@@ -387,10 +444,8 @@ VI Усього обсяги постачання за основною став
       `Податкова накладна 1 5 0 4 2 0 2 6 2 7 /\n(дата складання) (порядковий номер)\n${ocrLayoutText}`,
     );
 
-    expect(parsed.supplier.name).toBe('ПРИВАТНЕ ПІДПРИЄМСТВО "ВОЛИНСЬКА ДРУКАРНЯ"');
-    expect(parsed.recipient.name).toBe(
-      'Товаристо з обмеженою відповідальністю "Видавництво "Кузя"',
-    );
+    expect(parsed.supplier.name).toBe('"ВОЛИНСЬКА ДРУКАРНЯ"');
+    expect(parsed.recipient.name).toBe('"Кузя"');
   });
 
   it("extracts line items when description does not start with 'Послуга'", () => {

@@ -5,6 +5,7 @@ import {
   collectSelectionIdsFromRows,
   createDraftMappingRow,
   getRowExternalEditionId,
+  pickInitialIssueCandidate,
   syncIssueSelectionWithCandidates,
 } from "@/lib/publication-mappings/editor";
 import type { PublicationIssueMappingRow } from "@/lib/publication-mappings/types";
@@ -151,6 +152,22 @@ describe("syncIssueSelectionWithCandidates", () => {
     ).toEqual({
       externalIssueId: 101,
       externalIssueNumber: "04-26",
+    });
+  });
+});
+
+describe("pickInitialIssueCandidate", () => {
+  it("selects the exact issue candidate for an already mapped edition", () => {
+    expect(
+      pickInitialIssueCandidate([
+        { externalIssueId: 4069, externalIssueNumber: "06-26", isExactMatch: true, score: 1 },
+        { externalIssueId: 4062, externalIssueNumber: "05-26", isExactMatch: false, score: 0.744 },
+      ]),
+    ).toEqual({
+      externalIssueId: 4069,
+      externalIssueNumber: "06-26",
+      isExactMatch: true,
+      score: 1,
     });
   });
 });

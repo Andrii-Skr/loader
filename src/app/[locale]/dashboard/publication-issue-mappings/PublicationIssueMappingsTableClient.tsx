@@ -72,6 +72,7 @@ export function PublicationIssueMappingsTableClient({
       const publicationSelections = new Map<number, Set<number>>();
       const issueMatches: Array<{
         publicationIssueId: number;
+        documentId?: number;
         matchedIssue: {
           externalEditionId: number;
           externalEditionName: string;
@@ -100,10 +101,14 @@ export function PublicationIssueMappingsTableClient({
         }
 
         publicationSelections.set(selectionState.publicationId, publicationSelectionSet);
-        issueMatches.push({
-          publicationIssueId: selectionState.publicationIssueId,
-          matchedIssue: selectionState.matchedIssue,
-        });
+        const issueMatchDocumentId = documentId ?? item.mappingDocumentId;
+        if (issueMatchDocumentId) {
+          issueMatches.push({
+            publicationIssueId: selectionState.publicationIssueId,
+            documentId: issueMatchDocumentId,
+            matchedIssue: selectionState.matchedIssue,
+          });
+        }
       }
 
       const result = await savePublicationIssueMappingRegistry({
@@ -117,7 +122,6 @@ export function PublicationIssueMappingsTableClient({
         ),
         issueMatches,
       });
-
       if (result.errorKey) {
         setServerMessage({ error: t(`messages.${result.errorKey}`), success: null });
         return;
@@ -175,7 +179,7 @@ export function PublicationIssueMappingsTableClient({
                   (line) => line.publicationIssueId === item.publicationIssueId,
                 )}
                 allocationSaveLabel={allocationSaveLabel}
-                documentId={documentId}
+                documentId={documentId ?? item.mappingDocumentId ?? undefined}
                 key={item.publicationIssueId}
                 editorData={editorData}
                 locale={locale}

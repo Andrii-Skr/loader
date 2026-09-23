@@ -1,39 +1,70 @@
 import { DocumentStatus, Prisma } from "@/generated/prisma/client";
 
-import { getStoredPartyTaxId } from "@/lib/documents/party-tax-id";
+import { normalizePartyName } from "@/lib/documents/party-name";
+import { resolvePartyTaxId } from "@/lib/documents/party-tax-id";
 import {
   type DocumentContour,
   getInvoiceParserByContour,
   normalizeLookupKey,
 } from "@/lib/pdf/parser";
+import { parsePublicationIssueDescriptionUaV1 } from "@/lib/pdf/parser-ua";
+import type { ParsedPublicationIssue, ParsedVatInvoice } from "@/lib/pdf/types";
 import { prisma } from "@/lib/prisma";
+
+type DocumentParser = {
+  parserVersion: string;
+  lookupLocale: string;
+  parse: (rawText: string) => ParsedVatInvoice;
+  parsePublicationIssueDescription: (
+    description: string,
+    documentDate: string,
+  ) => ParsedPublicationIssue | null;
+};
 
 type IngestVatInvoiceInput = {
   documentId: number;
   rawText: string;
   contour: DocumentContour;
+  parserOverride?: DocumentParser;
 };
 
-export const ingestVatInvoice = async ({ documentId, rawText, contour }: IngestVatInvoiceInput) => {
-  const parser = getInvoiceParserByContour(contour);
+export const ingestVatInvoice = async ({
+  documentId,
+  rawText,
+  contour,
+  parserOverride,
+}: IngestVatInvoiceInput) => {
+  const parser = parserOverride ?? getInvoiceParserByContour(contour);
   const parsed = parser.parse(rawText);
-  const supplierTaxId = getStoredPartyTaxId({
+  const supplierName = normalizePartyName(parsed.supplier.name);
+  const recipientName = normalizePartyName(parsed.recipient.name);
+  const supplierTaxId = await resolvePartyTaxId({
+    party: { ...parsed.supplier, name: supplierName },
     contour,
-    taxId: parsed.supplier.taxId,
-    kpp: parsed.supplier.kpp,
+    findExistingTaxIds: (name) =>
+      prisma.supplier.findMany({
+        where: { name: { equals: name, mode: "insensitive" } },
+        select: { taxId: true },
+        take: 2,
+      }),
   });
-  const recipientTaxId = getStoredPartyTaxId({
+  const recipientTaxId = await resolvePartyTaxId({
+    party: { ...parsed.recipient, name: recipientName },
     contour,
-    taxId: parsed.recipient.taxId,
-    kpp: parsed.recipient.kpp,
+    findExistingTaxIds: (name) =>
+      prisma.recipient.findMany({
+        where: { name: { equals: name, mode: "insensitive" } },
+        select: { taxId: true },
+        take: 2,
+      }),
   });
 
   return prisma.$transaction(async (tx) => {
     const supplier = await tx.supplier.upsert({
       where: { taxId: supplierTaxId },
-      update: { name: parsed.supplier.name, kpp: parsed.supplier.kpp },
+      update: { name: supplierName, kpp: parsed.supplier.kpp },
       create: {
-        name: parsed.supplier.name,
+        name: supplierName,
         taxId: supplierTaxId,
         kpp: parsed.supplier.kpp,
       },
@@ -41,9 +72,9 @@ export const ingestVatInvoice = async ({ documentId, rawText, contour }: IngestV
 
     const recipient = await tx.recipient.upsert({
       where: { taxId: recipientTaxId },
-      update: { name: parsed.recipient.name, kpp: parsed.recipient.kpp },
+      update: { name: recipientName, kpp: parsed.recipient.kpp },
       create: {
-        name: parsed.recipient.name,
+        name: recipientName,
         taxId: recipientTaxId,
         kpp: parsed.recipient.kpp,
       },
@@ -186,6 +217,29 @@ export const ingestVatInvoice = async ({ documentId, rawText, contour }: IngestV
     return document;
   });
 };
+
+export const ingestInvoiceDocument = async ({
+  documentId,
+  rawText,
+  parsed,
+  parserVersion = "invoice-ua-v1",
+}: {
+  documentId: number;
+  rawText: string;
+  parsed: ParsedVatInvoice;
+  parserVersion?: string;
+}) =>
+  ingestVatInvoice({
+    documentId,
+    rawText,
+    contour: "UA",
+    parserOverride: {
+      parserVersion,
+      lookupLocale: "uk-UA",
+      parse: () => parsed,
+      parsePublicationIssueDescription: parsePublicationIssueDescriptionUaV1,
+    },
+  });
 
 const parseDocumentDate = (value: string): Date => {
   const [day, month, year] = value.split(".");

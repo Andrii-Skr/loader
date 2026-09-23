@@ -2,6 +2,7 @@ import { getFormatter, getTranslations, setRequestLocale } from "next-intl/serve
 
 import { UploadInvoiceForm } from "@/app/(app)/dashboard/UploadInvoiceForm";
 import { DocumentRegistry } from "@/app/[locale]/dashboard/DocumentRegistry";
+import { OrphanedInvoiceVersions } from "@/app/[locale]/dashboard/OrphanedInvoiceVersions";
 import { auth } from "@/auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,10 +10,14 @@ import { Card } from "@/components/ui/card";
 import { Link } from "@/i18n/navigation";
 import { type AppLocale, routing } from "@/i18n/routing";
 import type { MappingStatusKey } from "@/lib/documents/mapping-status";
-import { getDashboardDocuments } from "@/lib/documents/queries";
+import { getDashboardDocuments, getOrphanedInvoiceVersionGroups } from "@/lib/documents/queries";
 import { splitRegistryDocuments } from "@/lib/documents/registry";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+
+const getDocumentCurrency = (currency: string | null, contour: string | null) =>
+  contour === "RU" ? "RUB" : (currency ?? "UAH");
 
 const formatCurrency = (
   formatter: Awaited<ReturnType<typeof getFormatter>>,
@@ -26,7 +31,7 @@ const formatCurrency = (
   }
 
   const amount = typeof value === "number" ? value : Number(value);
-  const resolvedCurrency = contour === "RU" ? "RUB" : (currency ?? "UAH");
+  const resolvedCurrency = getDocumentCurrency(currency, contour);
 
   return formatter.number(amount, { style: "currency", currency: resolvedCurrency });
 };
@@ -75,6 +80,18 @@ const formatDocumentSearchValue = ({
     .join(" ");
 };
 
+const formatDocumentDate = (documentDate: Date | null, fallback: string) => {
+  if (!documentDate) {
+    return fallback;
+  }
+
+  const day = String(documentDate.getUTCDate()).padStart(2, "0");
+  const month = String(documentDate.getUTCMonth() + 1).padStart(2, "0");
+  const year = documentDate.getUTCFullYear();
+
+  return `${day}.${month}.${year}`;
+};
+
 export default async function LocalizedDashboardPage({
   params,
 }: {
@@ -86,8 +103,19 @@ export default async function LocalizedDashboardPage({
     : routing.defaultLocale;
   setRequestLocale(locale);
 
-  const documents = await getDashboardDocuments();
-  const [session, t, documentDetails, common, format] = await Promise.all([
+  const [
+    documents,
+    orphanedVersionGroups,
+    documentTypes,
+    session,
+    t,
+    documentDetails,
+    common,
+    format,
+  ] = await Promise.all([
+    getDashboardDocuments(),
+    getOrphanedInvoiceVersionGroups(),
+    prisma.documentType.findMany({ orderBy: { id: "asc" }, select: { id: true, name: true } }),
     auth(),
     getTranslations({ locale, namespace: "Dashboard" }),
     getTranslations({ locale, namespace: "DocumentDetails" }),
@@ -95,6 +123,12 @@ export default async function LocalizedDashboardPage({
     getFormatter({ locale }),
   ]);
   const canUseWorkspace = Boolean(session?.user);
+  const documentTypeLabel = (id: number) =>
+    id === 1
+      ? common("documentTypes.taxInvoice")
+      : id === 2
+        ? common("documentTypes.invoice")
+        : common("documentTypes.unknown");
 
   const mappingStatusLabels: Record<MappingStatusKey, string> = {
     unparsed: documentDetails("mappingStatus.unparsed"),
@@ -104,16 +138,20 @@ export default async function LocalizedDashboardPage({
   };
   const tableLabels = {
     document: t("table.document"),
+    type: t("table.type"),
     supplier: t("table.supplier"),
     recipient: t("table.recipient"),
     amount: t("table.amount"),
     status: t("table.status"),
     rows: t("table.rows"),
+    taxInvoice: t("table.taxInvoice"),
     actions: t("table.actions"),
   };
 
   const serializedDocuments = documents.map((document) => ({
     id: document.id,
+    documentTypeId: document.documentTypeId,
+    documentTypeName: documentTypeLabel(document.documentTypeId),
     label: formatDocumentLabel({
       documentType: document.documentType,
       documentNumber: document.documentNumber,
@@ -125,6 +163,7 @@ export default async function LocalizedDashboardPage({
       documentNumber: document.documentNumber,
       documentDate: document.documentDate,
     }),
+    documentDateIso: document.documentDate?.toISOString().slice(0, 10) ?? null,
     supplierTaxId: document.supplier?.taxId ?? null,
     supplierName: document.supplier?.name ?? null,
     recipientName: document.recipient?.name ?? null,
@@ -136,9 +175,29 @@ export default async function LocalizedDashboardPage({
       common("pending"),
     ),
     totalAmountValue: document.totalAmount === null ? null : Number(document.totalAmount),
+    totalAmountRaw: document.totalAmount?.toString() ?? null,
+    currency: getDocumentCurrency(document.currency, document.documentContour),
     mappingStatus: document.mappingStatus,
     lineItemsCount: document._count.lineItems,
+    hasTaxInvoice: document.hasTaxInvoice,
     documentDate: document.documentDate,
+    versionHistory: document.versionHistory.map((version) => ({
+      id: version.id,
+      sourceFileName: version.sourceFileName,
+      documentNumber: version.documentNumber ?? common("pending"),
+      documentDate: formatDocumentDate(version.documentDate, common("pending")),
+      supplierName: version.supplier?.name ?? common("pending"),
+      recipientName: version.recipient?.name ?? common("pending"),
+      totalAmount: formatCurrency(
+        format,
+        version.totalAmount?.toString() ?? null,
+        version.currency,
+        version.documentContour,
+        common("pending"),
+      ),
+      revision: version.revision,
+      isCurrent: version.isCurrent,
+    })),
   }));
 
   const { actionableDocuments, completedGroups } = splitRegistryDocuments({
@@ -146,6 +205,48 @@ export default async function LocalizedDashboardPage({
     locale,
     undatedTitle: t("completedUndatedMonth"),
   });
+  const orphanedGroups = orphanedVersionGroups.map((group) => {
+    const latestVersion = group.versions[0];
+
+    return {
+      key: group.key,
+      title: t("versionHistory.orphanedGroup", {
+        number: latestVersion?.documentNumber ?? common("pending"),
+        date: formatDocumentDate(latestVersion?.documentDate ?? null, common("pending")),
+      }),
+      versions: group.versions.map((version) => ({
+        id: version.id,
+        sourceFileName: version.sourceFileName,
+        revision: version.revision,
+        documentNumber: version.documentNumber ?? common("pending"),
+        documentDate: formatDocumentDate(version.documentDate, common("pending")),
+        supplierName: version.supplier?.name ?? common("pending"),
+        recipientName: version.recipient?.name ?? common("pending"),
+        totalAmount: formatCurrency(
+          format,
+          version.totalAmount?.toString() ?? null,
+          version.currency,
+          version.documentContour,
+          common("pending"),
+        ),
+      })),
+    };
+  });
+  const partyNameCollator = new Intl.Collator(locale, { numeric: true, sensitivity: "base" });
+  const supplierNames = Array.from(
+    new Set(
+      serializedDocuments.flatMap((document) =>
+        document.supplierName ? [document.supplierName] : [],
+      ),
+    ),
+  ).sort(partyNameCollator.compare);
+  const recipientNames = Array.from(
+    new Set(
+      serializedDocuments.flatMap((document) =>
+        document.recipientName ? [document.recipientName] : [],
+      ),
+    ),
+  ).sort(partyNameCollator.compare);
 
   return (
     <div style={{ display: "grid", gap: 24 }}>
@@ -190,6 +291,13 @@ export default async function LocalizedDashboardPage({
             <Badge>{common("records", { count: documents.length })}</Badge>
             {canUseWorkspace ? (
               <Button asChild size="sm" variant="outline">
+                <Link href="/dashboard/tax-coverage" locale={locale}>
+                  {t("taxCoverageQueue")}
+                </Link>
+              </Button>
+            ) : null}
+            {canUseWorkspace ? (
+              <Button asChild size="sm" variant="outline">
                 <Link
                   href={{
                     pathname: "/dashboard/publication-issue-mappings",
@@ -213,11 +321,23 @@ export default async function LocalizedDashboardPage({
           completedSectionTitle={t("completedSectionTitle")}
           emptySearchLabel={t("emptySearch")}
           emptyRegistryLabel={t("emptyRegistry")}
+          documentTypes={documentTypes.map((documentType) => ({
+            id: documentType.id,
+            name: documentTypeLabel(documentType.id),
+          }))}
           locale={locale}
           mappingStatusLabels={mappingStatusLabels}
           pendingLabel={common("pending")}
           reconciliationLabel={t("reconciliation.open")}
+          recipientFilterPlaceholder={t("allRecipients")}
+          recipientNames={recipientNames}
           searchPlaceholder={t("searchPlaceholder")}
+          dateRangeLabels={{
+            title: t("documentDateRange.title"),
+            from: t("documentDateRange.from"),
+            to: t("documentDateRange.to"),
+            clear: t("documentDateRange.clear"),
+          }}
           searchLabels={{
             document: t("searchByColumn", { column: tableLabels.document }),
             supplier: t("searchByColumn", { column: tableLabels.supplier }),
@@ -232,9 +352,42 @@ export default async function LocalizedDashboardPage({
             descending: t("sortDescending"),
           }}
           sortAlphabet={t("sortAlphabet")}
+          supplierFilterPlaceholder={t("allSuppliers")}
+          supplierNames={supplierNames}
           tableLabels={tableLabels}
+          typeFilterLabel={t("searchByColumn", { column: tableLabels.type })}
+          typeFilterPlaceholder={t("allDocumentTypes")}
+          versionHistoryLabels={{
+            toggle: t("versionHistory.toggle"),
+            title: t("versionHistory.title"),
+            current: t("versionHistory.current"),
+            makeCurrent: t("versionHistory.makeCurrent"),
+            selectionFailed: t("versionHistory.selectionFailed"),
+            number: t("versionHistory.number", { value: "{value}" }),
+            date: t("versionHistory.date", { value: "{value}" }),
+            supplier: t("versionHistory.supplier", { value: "{value}" }),
+            recipient: t("versionHistory.recipient", { value: "{value}" }),
+          }}
         />
       </Card>
+      {orphanedGroups.length > 0 ? (
+        <OrphanedInvoiceVersions
+          canSelect={canUseWorkspace}
+          groups={orphanedGroups}
+          labels={{
+            title: t("versionHistory.orphanedTitle"),
+            description: t("versionHistory.orphanedDescription"),
+            makeCurrent: t("versionHistory.makeCurrent"),
+            selectionFailed: t("versionHistory.selectionFailed"),
+            revision: t("versionHistory.revision", { value: "{value}" }),
+            number: t("versionHistory.number", { value: "{value}" }),
+            date: t("versionHistory.date", { value: "{value}" }),
+            supplier: t("versionHistory.supplier", { value: "{value}" }),
+            recipient: t("versionHistory.recipient", { value: "{value}" }),
+          }}
+          locale={locale}
+        />
+      ) : null}
     </div>
   );
 }

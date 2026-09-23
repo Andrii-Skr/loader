@@ -51,12 +51,18 @@ describe("getPublicationIssueRegistry", () => {
     getExactCandidateCountsMock.mockResolvedValue(new Map());
   });
 
-  it("does not scope the global unmatched filter to the document context", async () => {
+  it("keeps the global unmatched filter on current documents, not the selected document", async () => {
     await getPublicationIssueRegistry("unmatched", 42);
 
     expect(prismaMocks.publicationIssueFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {},
+        where: {
+          lineItems: {
+            some: {
+              document: { isCurrent: true },
+            },
+          },
+        },
       }),
     );
   });
@@ -77,12 +83,18 @@ describe("getPublicationIssueRegistry", () => {
     );
   });
 
-  it("does not scope the global all filter to the document context", async () => {
+  it("keeps the global all filter on current documents, not the selected document", async () => {
     await getPublicationIssueRegistry("all", 42);
 
     expect(prismaMocks.publicationIssueFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {},
+        where: {
+          lineItems: {
+            some: {
+              document: { isCurrent: true },
+            },
+          },
+        },
       }),
     );
   });
@@ -95,7 +107,11 @@ describe("getPublicationIssueRegistry", () => {
         include: expect.objectContaining({
           _count: {
             select: {
-              lineItems: true,
+              lineItems: {
+                where: {
+                  document: { isCurrent: true },
+                },
+              },
             },
           },
           lineItems: expect.objectContaining({
@@ -185,7 +201,7 @@ describe("getPublicationIssueRegistry", () => {
     ]);
   });
 
-  it("keeps rows without issue-number candidates out of the matched tab", async () => {
+  it("requires a confirmed mapping in every document occurrence", async () => {
     prismaMocks.publicationIssueFindMany.mockResolvedValue([
       {
         id: 11,
@@ -209,6 +225,106 @@ describe("getPublicationIssueRegistry", () => {
         },
         lineItems: [],
       },
+      {
+        id: 12,
+        _count: { lineItems: 2 },
+        publication: {
+          id: 4,
+          displayName: "Банзай",
+          mappings: [
+            {
+              id: 2,
+              externalEditionId: 8,
+              externalEditionName: "Банзай",
+              source: { code: "idz-ukr", displayName: "IDZ-UKR" },
+            },
+          ],
+        },
+        issueNumber: {
+          id: 4,
+          rawValue: "4",
+          canonicalValue: "04-26",
+        },
+        lineItems: [],
+      },
+    ]);
+    getExactCandidateCountsMock.mockResolvedValue(
+      new Map([
+        [
+          11,
+          {
+            publicationCandidateCount: 1,
+            issueNumberCandidateCount: 0,
+          },
+        ],
+        [
+          12,
+          {
+            publicationCandidateCount: 1,
+            issueNumberCandidateCount: 0,
+          },
+        ],
+      ]),
+    );
+    prismaMocks.specialDocumentGroupBy.mockResolvedValue([
+      {
+        publicationIssueId: 11,
+        _count: { _all: 1 },
+      },
+      {
+        publicationIssueId: 12,
+        _count: { _all: 1 },
+      },
+    ]);
+    prismaMocks.specialDocumentFindMany.mockResolvedValue([
+      {
+        publicationIssueId: 12,
+        documentId: 55,
+      },
+    ]);
+
+    await expect(getPublicationIssueRegistry("matched")).resolves.toEqual([
+      expect.objectContaining({
+        publicationIssueId: 11,
+        hasConfirmedDocumentMatch: true,
+        fullyMatched: true,
+        hasMultipleDocumentIssueMatches: false,
+        documentIssueMatchCount: 0,
+      }),
+    ]);
+    await expect(getPublicationIssueRegistry("unmatched")).resolves.toEqual([
+      expect.objectContaining({
+        publicationIssueId: 12,
+        fullyMatched: false,
+        mappingDocumentId: 55,
+      }),
+    ]);
+  });
+
+  it("accepts a confirmed document match even when the issue text is not an exact candidate", async () => {
+    prismaMocks.publicationIssueFindMany.mockResolvedValue([
+      {
+        id: 11,
+        _count: { lineItems: 1 },
+        publication: {
+          id: 3,
+          displayName: "Філворди",
+          mappings: [
+            {
+              id: 1,
+              externalEditionId: 7,
+              externalEditionName: "Філворди",
+              source: { code: "idz-ukr", displayName: "IDZ-UKR" },
+            },
+          ],
+        },
+        issueNumber: {
+          id: 4,
+          rawValue: "4 (том 27)",
+          canonicalValue: "04-26",
+        },
+        lineItems: [],
+      },
     ]);
     getExactCandidateCountsMock.mockResolvedValue(
       new Map([
@@ -221,16 +337,18 @@ describe("getPublicationIssueRegistry", () => {
         ],
       ]),
     );
-    prismaMocks.specialDocumentGroupBy.mockResolvedValue([]);
+    prismaMocks.specialDocumentGroupBy.mockResolvedValue([
+      {
+        publicationIssueId: 11,
+        _count: { _all: 1 },
+      },
+    ]);
 
-    await expect(getPublicationIssueRegistry("matched")).resolves.toEqual([]);
-    await expect(getPublicationIssueRegistry("unmatched")).resolves.toEqual([
+    await expect(getPublicationIssueRegistry("matched", 42)).resolves.toEqual([
       expect.objectContaining({
         publicationIssueId: 11,
-        hasConfirmedDocumentMatch: false,
-        fullyMatched: false,
-        hasMultipleDocumentIssueMatches: false,
-        documentIssueMatchCount: 0,
+        hasConfirmedDocumentMatch: true,
+        fullyMatched: true,
       }),
     ]);
   });

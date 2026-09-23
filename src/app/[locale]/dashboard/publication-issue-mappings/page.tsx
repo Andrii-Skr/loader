@@ -47,8 +47,12 @@ export default async function PublicationIssueMappingsPage({
   }
 
   const parsedSearchParams = searchParamsSchema.safeParse(await searchParams);
-  const filter = parsedSearchParams.success ? (parsedSearchParams.data.filter ?? "all") : "all";
   const documentId = parsedSearchParams.success ? parsedSearchParams.data.documentId : undefined;
+  // In document mode this screen is a resolution queue. Keep completed pairs out of it
+  // after a document-level mapping save refreshes the page.
+  const filter = parsedSearchParams.success
+    ? (parsedSearchParams.data.filter ?? (documentId ? "document-unmatched" : "all"))
+    : "all";
   const filterValues = documentId
     ? [...baseFilterValues, "document-unmatched" as const]
     : baseFilterValues;
@@ -61,6 +65,7 @@ export default async function PublicationIssueMappingsPage({
   ]);
   const editorEntries = await Promise.all(
     registry.map(async (item) => {
+      const mappingDocumentId = documentId ?? item.mappingDocumentId;
       const publicationCandidates = await searchPublicationCandidates({
         publicationIssueId: item.publicationIssueId,
       });
@@ -71,12 +76,13 @@ export default async function PublicationIssueMappingsPage({
         ) ??
         item.publicationMappings[0] ??
         pickInitialPublicationCandidate(publicationCandidates);
-      const initialIssueNumberCandidates = autoSelectedPublicationCandidate
-        ? await searchIssueNumberCandidates({
-            publicationIssueId: item.publicationIssueId,
-            externalEditionId: autoSelectedPublicationCandidate.externalEditionId,
-          })
-        : [];
+      const initialIssueNumberCandidates =
+        mappingDocumentId && autoSelectedPublicationCandidate
+          ? await searchIssueNumberCandidates({
+              publicationIssueId: item.publicationIssueId,
+              externalEditionId: autoSelectedPublicationCandidate.externalEditionId,
+            })
+          : [];
 
       return {
         item,

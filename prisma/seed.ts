@@ -25,6 +25,19 @@ const getRequiredEnv = (key: "ADMIN_LOGIN" | "ADMIN_PASSWORD") => {
 };
 
 async function main() {
+  await Promise.all([
+    prisma.documentType.upsert({
+      where: { id: 1 },
+      update: { name: "Tax invoice" },
+      create: { id: 1, name: "Tax invoice" },
+    }),
+    prisma.documentType.upsert({
+      where: { id: 2 },
+      update: { name: "Invoice" },
+      create: { id: 2, name: "Invoice" },
+    }),
+  ]);
+
   const login = getRequiredEnv("ADMIN_LOGIN");
   const password = getRequiredEnv("ADMIN_PASSWORD");
   const name = process.env.ADMIN_NAME?.trim() || "Admin";

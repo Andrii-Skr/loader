@@ -94,6 +94,7 @@ const buildInitialRows = ({
     parsedIssueNumber: selectedItem.parsedIssueNumber,
     publicationMappings: selectedItem.publicationMappings,
   });
+  const savedIssueMatch = selectedItem.savedDocumentIssueMatch;
 
   if (savedRows.length === 0) {
     const initialIssueNumberCandidate = initialPublicationCandidate
@@ -102,11 +103,10 @@ const buildInitialRows = ({
             [],
         )
       : null;
-    const savedDocumentIssueSelection =
-      selectedItem.savedDocumentIssueMatch &&
-      selectedItem.savedDocumentIssueMatch.externalEditionId ===
-        initialPublicationCandidate?.externalEditionId
-        ? toIssueDraftSelection(selectedItem.savedDocumentIssueMatch)
+    const savedIssueSelection =
+      savedIssueMatch &&
+      savedIssueMatch.externalEditionId === initialPublicationCandidate?.externalEditionId
+        ? toIssueDraftSelection(savedIssueMatch)
         : null;
 
     return [
@@ -122,9 +122,9 @@ const buildInitialRows = ({
               externalEditionName: initialPublicationCandidate.externalEditionName,
             }
           : null,
-        draftIssueSelection: initialIssueNumberCandidate
-          ? toIssueDraftSelection(initialIssueNumberCandidate)
-          : savedDocumentIssueSelection,
+        draftIssueSelection:
+          savedIssueSelection ??
+          (initialIssueNumberCandidate ? toIssueDraftSelection(initialIssueNumberCandidate) : null),
       },
     ];
   }
@@ -140,11 +140,20 @@ const buildInitialRows = ({
         : null,
     draftIssueSelection:
       row.savedPublicationMapping !== null
-        ? selectedItem.savedDocumentIssueMatch &&
-          selectedItem.savedDocumentIssueMatch.externalEditionId ===
-            row.savedPublicationMapping.externalEditionId
-          ? toIssueDraftSelection(selectedItem.savedDocumentIssueMatch)
-          : null
+        ? savedIssueMatch &&
+          savedIssueMatch.externalEditionId === row.savedPublicationMapping.externalEditionId
+          ? toIssueDraftSelection(savedIssueMatch)
+          : (() => {
+              const initialIssueNumberCandidate = pickInitialIssueCandidate(
+                initialIssueNumberCandidatesByEditionId[
+                  row.savedPublicationMapping.externalEditionId
+                ] ?? [],
+              );
+
+              return initialIssueNumberCandidate
+                ? toIssueDraftSelection(initialIssueNumberCandidate)
+                : null;
+            })()
         : initialPublicationCandidate
           ? (() => {
               const initialIssueNumberCandidate = pickInitialIssueCandidate(
@@ -157,10 +166,9 @@ const buildInitialRows = ({
                 return toIssueDraftSelection(initialIssueNumberCandidate);
               }
 
-              return selectedItem.savedDocumentIssueMatch &&
-                selectedItem.savedDocumentIssueMatch.externalEditionId ===
-                  initialPublicationCandidate.externalEditionId
-                ? toIssueDraftSelection(selectedItem.savedDocumentIssueMatch)
+              return savedIssueMatch &&
+                savedIssueMatch.externalEditionId === initialPublicationCandidate.externalEditionId
+                ? toIssueDraftSelection(savedIssueMatch)
                 : null;
             })()
           : row.draftIssueSelection,
@@ -327,22 +335,29 @@ export const PublicationIssueMappingEditor = forwardRef<
         return {
           publicationIssueId: selectedItem.publicationIssueId,
           publicationId: selectedItem.publicationId,
-          matchedIssue: selectedIssueRow?.draftIssueSelection
-            ? {
-                externalEditionId: getRowExternalEditionId(selectedIssueRow) as number,
-                externalEditionName:
-                  selectedIssueRow.savedPublicationMapping?.externalEditionName ??
-                  selectedIssueRow.draftPublicationSelection?.externalEditionName ??
-                  "",
-                externalIssueId: selectedIssueRow.draftIssueSelection.externalIssueId,
-                externalIssueNumber: selectedIssueRow.draftIssueSelection.externalIssueNumber,
-              }
-            : null,
+          matchedIssue:
+            documentId && selectedIssueRow?.draftIssueSelection
+              ? {
+                  externalEditionId: getRowExternalEditionId(selectedIssueRow) as number,
+                  externalEditionName:
+                    selectedIssueRow.savedPublicationMapping?.externalEditionName ??
+                    selectedIssueRow.draftPublicationSelection?.externalEditionName ??
+                    "",
+                  externalIssueId: selectedIssueRow.draftIssueSelection.externalIssueId,
+                  externalIssueNumber: selectedIssueRow.draftIssueSelection.externalIssueNumber,
+                }
+              : null,
           publicationSelectionIds,
         };
       },
     }),
-    [isAllocationExpanded, rows, selectedItem.publicationId, selectedItem.publicationIssueId],
+    [
+      documentId,
+      isAllocationExpanded,
+      rows,
+      selectedItem.publicationId,
+      selectedItem.publicationIssueId,
+    ],
   );
 
   const renderPublicationCell = (row: PublicationIssueMappingRow) => {
@@ -555,7 +570,9 @@ export const PublicationIssueMappingEditor = forwardRef<
               ) : null}
             </TableCell>
             <TableCell>{renderPublicationCell(row)}</TableCell>
-            <TableCell>{renderIssueNumberCell(row)}</TableCell>
+            <TableCell>
+              {documentId ? renderIssueNumberCell(row) : <span className="muted">—</span>}
+            </TableCell>
             <TableCell className="w-[7.5rem] text-center align-middle">
               {index === 0 ? (
                 <div className="flex justify-center">

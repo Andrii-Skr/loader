@@ -41,6 +41,12 @@ const toDocumentMatchDetail = (match: {
 
 const REGISTRY_OCCURRENCE_LIMIT = 10;
 
+const currentDocumentWhere = {
+  document: {
+    isCurrent: true,
+  },
+} satisfies Prisma.SpecialDocumentWhereInput;
+
 const buildRegistryWhere = (
   filter: PublicationIssueRegistryFilter,
   documentId?: number,
@@ -58,18 +64,19 @@ const buildRegistryWhere = (
   if (filter === "matched") {
     return {
       publication: { is: { mappings: { some: {} } } },
+      lineItems: { some: currentDocumentWhere },
     };
   }
 
   if (filter === "unmatched") {
-    return {};
+    return { lineItems: { some: currentDocumentWhere } };
   }
 
   if (filter === "document-unmatched") {
     return documentScopedWhere;
   }
 
-  return {};
+  return { lineItems: { some: currentDocumentWhere } };
 };
 
 const mapSummary = (publicationIssue: {
@@ -129,6 +136,7 @@ const getConfirmedDocumentMatchCounts = async ({
       publicationIssueId: { in: publicationIssueIds },
       publicationIssueConfirmedAt: { not: null },
       externalMatches: { some: {} },
+      ...(documentId ? {} : currentDocumentWhere),
       ...(documentId ? { documentId } : {}),
     },
     _count: {
@@ -141,6 +149,69 @@ const getConfirmedDocumentMatchCounts = async ({
       row.publicationIssueId === null ? [] : [[row.publicationIssueId, row._count._all] as const],
     ),
   );
+};
+
+const getMappingDocumentContexts = async ({
+  documentId,
+  publicationIssueIds,
+  unmatchedOnly,
+}: {
+  documentId?: number;
+  publicationIssueIds: number[];
+  unmatchedOnly: boolean;
+}) => {
+  if (publicationIssueIds.length === 0) {
+    return new Map<number, { documentId: number; savedIssueMatch: DocumentIssueMatchDto | null }>();
+  }
+
+  const rows = await prisma.specialDocument.findMany({
+    where: {
+      publicationIssueId: { in: publicationIssueIds },
+      ...(documentId ? {} : currentDocumentWhere),
+      ...(documentId ? { documentId } : {}),
+      ...(unmatchedOnly
+        ? {
+            OR: [{ publicationIssueConfirmedAt: null }, { externalMatches: { none: {} } }],
+          }
+        : {}),
+    },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    select: {
+      publicationIssueId: true,
+      documentId: true,
+      matchedExternalEditionId: true,
+      matchedExternalIssueId: true,
+      matchedExternalIssueNumber: true,
+    },
+  });
+
+  const contexts = new Map<
+    number,
+    { documentId: number; savedIssueMatch: DocumentIssueMatchDto | null }
+  >();
+
+  for (const row of rows) {
+    if (row.publicationIssueId !== null && !contexts.has(row.publicationIssueId)) {
+      contexts.set(row.publicationIssueId, {
+        documentId: row.documentId,
+        savedIssueMatch:
+          row.matchedExternalEditionId !== null &&
+          row.matchedExternalIssueId !== null &&
+          row.matchedExternalIssueNumber !== null &&
+          Number.isInteger(row.matchedExternalEditionId) &&
+          Number.isInteger(row.matchedExternalIssueId) &&
+          typeof row.matchedExternalIssueNumber === "string"
+            ? {
+                externalEditionId: row.matchedExternalEditionId,
+                externalIssueId: row.matchedExternalIssueId,
+                externalIssueNumber: row.matchedExternalIssueNumber,
+              }
+            : null,
+      });
+    }
+  }
+
+  return contexts;
 };
 
 const mapDocumentOccurrences = (
@@ -394,12 +465,13 @@ export const getPublicationIssueRegistry = cache(
         },
         _count: {
           select: {
-            lineItems: true,
+            lineItems: documentId ? { where: { documentId } } : { where: currentDocumentWhere },
           },
         },
         lineItems: {
           take: REGISTRY_OCCURRENCE_LIMIT,
           orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+          where: documentId ? { documentId } : currentDocumentWhere,
           select: {
             description: true,
             rawRowText: true,
@@ -414,33 +486,41 @@ export const getPublicationIssueRegistry = cache(
       },
     });
 
-    const candidateCounts = await getExactCandidateCounts(
-      items.map((item) => ({
-        publicationIssueId: item.id,
-        publicationName: item.publication.displayName,
-        canonicalIssueNumber: item.issueNumber.canonicalValue,
-      })),
-    );
-    const confirmedMatchCounts = await getConfirmedDocumentMatchCounts({
-      documentId,
-      publicationIssueIds: items.map((item) => item.id),
-    });
-    const savedDocumentIssueMatches = await getSavedDocumentIssueMatches({
-      documentId,
-      publicationIssueIds: items.map((item) => item.id),
-    });
+    const publicationIssueIds = items.map((item) => item.id);
+    const [
+      candidateCounts,
+      confirmedMatchCounts,
+      savedDocumentIssueMatches,
+      mappingDocumentContexts,
+    ] = await Promise.all([
+      getExactCandidateCounts(
+        items.map((item) => ({
+          publicationIssueId: item.id,
+          publicationName: item.publication.displayName,
+          canonicalIssueNumber: item.issueNumber.canonicalValue,
+        })),
+      ),
+      getConfirmedDocumentMatchCounts({ documentId, publicationIssueIds }),
+      getSavedDocumentIssueMatches({ documentId, publicationIssueIds }),
+      getMappingDocumentContexts({
+        documentId: filter === "document-unmatched" ? documentId : undefined,
+        publicationIssueIds,
+        unmatchedOnly: filter === "unmatched" || filter === "document-unmatched",
+      }),
+    ]);
 
     const registryItems = items.map((item) => {
       const counts = candidateCounts.get(item.id) ?? {
         publicationCandidateCount: 0,
         issueNumberCandidateCount: 0,
       };
-      const hasConfirmedDocumentMatch = (confirmedMatchCounts.get(item.id) ?? 0) > 0;
+      const confirmedDocumentMatchCount = confirmedMatchCounts.get(item.id) ?? 0;
+      const hasConfirmedDocumentMatch = confirmedDocumentMatchCount > 0;
 
       const fullyMatched =
         item.publication.mappings.length > 0 &&
-        counts.issueNumberCandidateCount > 0 &&
-        hasConfirmedDocumentMatch;
+        confirmedDocumentMatchCount === item._count.lineItems &&
+        item._count.lineItems > 0;
 
       return {
         ...mapSummary(item),
@@ -452,7 +532,11 @@ export const getPublicationIssueRegistry = cache(
         hasMultipleDocumentIssueMatches:
           (savedDocumentIssueMatches.detailMap.get(item.id)?.length ?? 0) > 1,
         documentIssueMatchCount: savedDocumentIssueMatches.detailMap.get(item.id)?.length ?? 0,
-        savedDocumentIssueMatch: savedDocumentIssueMatches.summaryMap.get(item.id) ?? null,
+        mappingDocumentId: mappingDocumentContexts.get(item.id)?.documentId ?? null,
+        savedDocumentIssueMatch:
+          savedDocumentIssueMatches.summaryMap.get(item.id) ??
+          mappingDocumentContexts.get(item.id)?.savedIssueMatch ??
+          null,
         savedDocumentIssueMatchDetails: savedDocumentIssueMatches.detailMap.get(item.id) ?? [],
       };
     });

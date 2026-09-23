@@ -1,9 +1,18 @@
 "use client";
 
-import { ArrowUpDown, ChevronDown, ClipboardCheck } from "lucide-react";
-import { Fragment, useDeferredValue, useState } from "react";
+import {
+  ArrowUpDown,
+  CalendarRange,
+  ChevronDown,
+  ClipboardCheck,
+  LoaderCircle,
+  Minus,
+  Plus,
+} from "lucide-react";
+import { Fragment, useDeferredValue, useState, useTransition } from "react";
 
 import { DeleteDocumentButton } from "@/app/(app)/dashboard/DeleteDocumentButton";
+import { selectInvoiceVersion } from "@/app/actions/documents";
 import { MappingStatusIcon } from "@/components/documents/mapping-status-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,23 +26,40 @@ import {
   TableRow,
   TableShell,
 } from "@/components/ui/table";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import type { AppLocale } from "@/i18n/routing";
 import type { MappingStatusKey } from "@/lib/documents/mapping-status";
-import { getRegistryReconciliationPath } from "@/lib/documents/registry";
+import { formatRegistryMoneyTotals, getRegistryReconciliationPath } from "@/lib/documents/registry";
 import { cn } from "@/lib/utils";
 
 type RegistryDocumentRow = {
   id: number;
+  documentTypeId: number;
+  documentTypeName: string;
   label: string;
   documentSearchValue: string;
+  documentDateIso: string | null;
   supplierTaxId: string | null;
   supplierName: string | null;
   recipientName: string | null;
   totalAmount: string | null;
   totalAmountValue: number | null;
+  totalAmountRaw: string | null;
+  currency: string;
   mappingStatus: MappingStatusKey;
   lineItemsCount: number;
+  hasTaxInvoice: boolean;
+  versionHistory: Array<{
+    id: number;
+    sourceFileName: string;
+    documentNumber: string;
+    documentDate: string;
+    supplierName: string;
+    recipientName: string;
+    totalAmount: string;
+    revision: number;
+    isCurrent: boolean;
+  }>;
 };
 
 type RegistryMonthGroup = {
@@ -43,7 +69,7 @@ type RegistryMonthGroup = {
   documents: RegistryDocumentRow[];
 };
 
-type SearchKey = "document" | "supplier" | "recipient" | "amount" | "rows";
+type SearchKey = "document" | "amount" | "rows";
 type SearchQueries = Record<SearchKey, string>;
 type SortKey = "label" | "supplierName" | "recipientName" | "totalAmountValue";
 type SortDirection = "ascending" | "descending";
@@ -61,7 +87,15 @@ type DocumentRegistryProps = {
   emptyRegistryLabel: string;
   emptySearchLabel: string;
   searchPlaceholder: string;
-  searchLabels: Record<SearchKey, string>;
+  searchLabels: Record<SearchKey | "supplier" | "recipient", string>;
+  dateRangeLabels: { title: string; from: string; to: string; clear: string };
+  supplierFilterPlaceholder: string;
+  recipientFilterPlaceholder: string;
+  supplierNames: string[];
+  recipientNames: string[];
+  typeFilterLabel: string;
+  typeFilterPlaceholder: string;
+  documentTypes: Array<{ id: number; name: string }>;
   statusFilterLabel: string;
   statusFilterPlaceholder: string;
   sortLabels: {
@@ -76,14 +110,27 @@ type DocumentRegistryProps = {
   reconciliationLabel: string;
   tableLabels: {
     document: string;
+    type: string;
     supplier: string;
     recipient: string;
     amount: string;
     status: string;
     rows: string;
+    taxInvoice: string;
     actions: string;
   };
   mappingStatusLabels: Record<MappingStatusKey, string>;
+  versionHistoryLabels: {
+    toggle: string;
+    title: string;
+    current: string;
+    makeCurrent: string;
+    selectionFailed: string;
+    number: string;
+    date: string;
+    supplier: string;
+    recipient: string;
+  };
   actionableDocuments: RegistryDocumentRow[];
   completedGroups: RegistryMonthGroup[];
 };
@@ -114,6 +161,137 @@ function SortDirectionArrow({ direction }: { direction: SortDirection }) {
         </>
       )}
     </svg>
+  );
+}
+
+function DocumentTypeFilter({
+  documentTypes,
+  label,
+  onChange,
+  placeholder,
+  value,
+}: {
+  documentTypes: DocumentRegistryProps["documentTypes"];
+  label: string;
+  onChange: (value: number | null) => void;
+  placeholder: string;
+  value: number | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedType = documentTypes.find((documentType) => documentType.id === value) ?? null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          aria-label={label}
+          className="h-9 w-full min-w-0 justify-between rounded-xl px-3 text-xs"
+          size="xs"
+          type="button"
+          variant="outline"
+        >
+          <span className={selectedType ? "truncate" : "muted truncate"}>
+            {selectedType?.name ?? placeholder}
+          </span>
+          <ChevronDown aria-hidden="true" className="size-3.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[17rem] max-w-[calc(100vw-2rem)] p-1.5">
+        <div className="grid">
+          <Button
+            className="justify-start px-3 text-xs"
+            onClick={() => {
+              onChange(null);
+              setOpen(false);
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {placeholder}
+          </Button>
+          {documentTypes.map((documentType) => (
+            <Button
+              key={documentType.id}
+              className="justify-start px-3 text-xs"
+              onClick={() => {
+                onChange(documentType.id);
+                setOpen(false);
+              }}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {documentType.name}
+            </Button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function PartyNameFilter({
+  label,
+  names,
+  onChange,
+  placeholder,
+  value,
+}: {
+  label: string;
+  names: string[];
+  onChange: (value: string | null) => void;
+  placeholder: string;
+  value: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          aria-label={label}
+          className="h-9 w-full min-w-0 justify-between rounded-xl px-3 text-xs"
+          size="xs"
+          type="button"
+          variant="outline"
+        >
+          <span className={value ? "truncate" : "muted truncate"}>{value ?? placeholder}</span>
+          <ChevronDown aria-hidden="true" className="size-3.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[17rem] max-w-[calc(100vw-2rem)] p-1.5">
+        <div className="grid max-h-72 overflow-y-auto">
+          <Button
+            className="justify-start px-3 text-xs"
+            onClick={() => {
+              onChange(null);
+              setOpen(false);
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {placeholder}
+          </Button>
+          {names.map((name) => (
+            <Button
+              key={name}
+              className="h-auto justify-start px-3 py-2 text-left text-xs whitespace-normal"
+              onClick={() => {
+                onChange(name);
+                setOpen(false);
+              }}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {name}
+            </Button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -179,12 +357,82 @@ function RegistrySearchInput({
   return (
     <Input
       aria-label={label}
-      className="h-9 min-w-28 rounded-xl px-3 py-2 text-xs"
+      className="h-9 min-w-0 rounded-xl px-3 py-2 text-xs"
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       type="search"
       value={value}
     />
+  );
+}
+
+function DocumentDateRangeFilter({
+  from,
+  labels,
+  onFromChange,
+  onToChange,
+  to,
+}: {
+  from: string;
+  labels: DocumentRegistryProps["dateRangeLabels"];
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+  to: string;
+}) {
+  const isActive = Boolean(from || to);
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          aria-label={labels.title}
+          className="h-9 shrink-0 rounded-xl"
+          size="icon-sm"
+          title={labels.title}
+          type="button"
+          variant={isActive ? "secondary" : "outline"}
+        >
+          <CalendarRange aria-hidden="true" className="size-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="grid w-[17rem] max-w-[calc(100vw-2rem)] gap-3 p-3">
+        <strong className="text-sm">{labels.title}</strong>
+        <label className="grid gap-1 text-xs">
+          <span>{labels.from}</span>
+          <Input
+            className="h-9 rounded-xl px-3 text-xs"
+            max={to || undefined}
+            onChange={(event) => onFromChange(event.target.value)}
+            type="date"
+            value={from}
+          />
+        </label>
+        <label className="grid gap-1 text-xs">
+          <span>{labels.to}</span>
+          <Input
+            className="h-9 rounded-xl px-3 text-xs"
+            min={from || undefined}
+            onChange={(event) => onToChange(event.target.value)}
+            type="date"
+            value={to}
+          />
+        </label>
+        {isActive ? (
+          <Button
+            className="justify-self-start"
+            onClick={() => {
+              onFromChange("");
+              onToChange("");
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {labels.clear}
+          </Button>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -208,7 +456,7 @@ function StatusFilter({
       <PopoverTrigger asChild>
         <Button
           aria-label={label}
-          className="h-9 w-full min-w-28 justify-between rounded-xl px-3 text-xs"
+          className="h-9 w-full min-w-0 justify-between rounded-xl px-3 text-xs"
           size="xs"
           type="button"
           variant="outline"
@@ -264,64 +512,185 @@ function RegistryDocumentTableRow({
   locale,
   pendingLabel,
   mappingStatusLabels,
+  versionHistoryLabels,
 }: {
   canDeleteDocuments: boolean;
   document: RegistryDocumentRow;
   locale: AppLocale;
   pendingLabel: string;
   mappingStatusLabels: Record<MappingStatusKey, string>;
+  versionHistoryLabels: DocumentRegistryProps["versionHistoryLabels"];
 }) {
+  const router = useRouter();
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
+  const [isVersionSelectionPending, startVersionSelectionTransition] = useTransition();
+  const [versionSelectionError, setVersionSelectionError] = useState<string | null>(null);
   const href = `/dashboard/documents/${document.id}`;
   const rowCellClassName = "transition-colors group-hover:bg-[rgba(177,74,47,0.08)]";
   const rowLinkClassName =
-    "block -mx-4 -my-[14px] px-4 py-[14px] focus-visible:bg-[rgba(177,74,47,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-inset";
+    "block -mx-2 -my-[14px] px-2 py-[14px] min-[1400px]:-mx-4 min-[1400px]:px-4 focus-visible:bg-[rgba(177,74,47,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-inset";
+  const hasVersionHistory = document.versionHistory.length > 1;
+
+  const selectVersion = (documentId: number) => {
+    startVersionSelectionTransition(async () => {
+      const result = await selectInvoiceVersion({ documentId, locale });
+
+      if (result.errorKey) {
+        setVersionSelectionError(versionHistoryLabels.selectionFailed);
+        return;
+      }
+
+      setVersionSelectionError(null);
+      router.refresh();
+    });
+  };
 
   return (
-    <TableRow className="group">
-      <TableCell className={rowCellClassName}>
-        <Link className={rowLinkClassName} href={href} locale={locale}>
-          <strong>{document.label}</strong>
-          <div className="muted">{document.supplierTaxId ?? pendingLabel}</div>
-        </Link>
-      </TableCell>
-      <TableCell className={rowCellClassName}>
-        <Link className={rowLinkClassName} href={href} locale={locale}>
-          {document.supplierName ?? pendingLabel}
-        </Link>
-      </TableCell>
-      <TableCell className={rowCellClassName}>
-        <Link className={rowLinkClassName} href={href} locale={locale}>
-          {document.recipientName ?? pendingLabel}
-        </Link>
-      </TableCell>
-      <TableCell className={rowCellClassName}>
-        <Link className={rowLinkClassName} href={href} locale={locale}>
-          {document.totalAmount ?? pendingLabel}
-        </Link>
-      </TableCell>
-      <TableCell className={rowCellClassName}>
-        <MappingStatusIcon
-          label={mappingStatusLabels[document.mappingStatus]}
-          status={document.mappingStatus}
-        />
-      </TableCell>
-      <TableCell className={rowCellClassName}>{document.lineItemsCount}</TableCell>
-      <TableCell className={cn(rowCellClassName)} data-row-action>
-        {canDeleteDocuments ? (
-          <DeleteDocumentButton documentId={document.id} locale={locale} />
-        ) : null}
-      </TableCell>
-    </TableRow>
+    <Fragment>
+      <TableRow className="group">
+        <TableCell className={rowCellClassName}>
+          <div className="flex items-start gap-1">
+            <Link className={`${rowLinkClassName} min-w-0 flex-1`} href={href} locale={locale}>
+              <strong>{document.label}</strong>
+              <div className="muted">{document.supplierTaxId ?? pendingLabel}</div>
+            </Link>
+            {hasVersionHistory ? (
+              <Button
+                aria-expanded={isVersionHistoryOpen}
+                aria-label={versionHistoryLabels.toggle}
+                className="mt-1 shrink-0"
+                onClick={() => setIsVersionHistoryOpen((open) => !open)}
+                size="icon-xs"
+                type="button"
+                variant="ghost"
+              >
+                {isVersionHistoryOpen ? <Minus /> : <Plus />}
+              </Button>
+            ) : null}
+          </div>
+        </TableCell>
+        <TableCell className={rowCellClassName}>
+          <Link className={rowLinkClassName} href={href} locale={locale}>
+            {document.documentTypeName}
+          </Link>
+        </TableCell>
+        <TableCell className={rowCellClassName}>
+          <Link className={rowLinkClassName} href={href} locale={locale}>
+            {document.supplierName ?? pendingLabel}
+          </Link>
+        </TableCell>
+        <TableCell className={rowCellClassName}>
+          <Link className={rowLinkClassName} href={href} locale={locale}>
+            {document.recipientName ?? pendingLabel}
+          </Link>
+        </TableCell>
+        <TableCell className={rowCellClassName}>
+          <Link className={rowLinkClassName} href={href} locale={locale}>
+            {document.totalAmount ?? pendingLabel}
+          </Link>
+        </TableCell>
+        <TableCell className={rowCellClassName}>
+          <MappingStatusIcon
+            label={mappingStatusLabels[document.mappingStatus]}
+            status={document.mappingStatus}
+          />
+        </TableCell>
+        <TableCell className={rowCellClassName}>{document.lineItemsCount}</TableCell>
+        <TableCell className={rowCellClassName}>{document.hasTaxInvoice ? "✓" : "—"}</TableCell>
+        <TableCell className={cn(rowCellClassName)} data-row-action>
+          {canDeleteDocuments ? (
+            <DeleteDocumentButton documentId={document.id} locale={locale} />
+          ) : null}
+        </TableCell>
+      </TableRow>
+      {hasVersionHistory && isVersionHistoryOpen ? (
+        <TableRow className="bg-[color:var(--panel-strong)]">
+          <TableCell colSpan={9}>
+            <div className="grid gap-3 p-1">
+              <strong className="text-sm">{versionHistoryLabels.title}</strong>
+              <div className="grid gap-2 lg:grid-cols-2">
+                {document.versionHistory.map((version) => (
+                  <section
+                    className="grid gap-1 rounded-xl border border-[color:var(--line)] bg-[color:var(--panel)] p-3 text-sm"
+                    key={version.id}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <strong className="truncate">{version.sourceFileName}</strong>
+                      {version.isCurrent ? (
+                        <span className="shrink-0 text-xs font-semibold text-[color:var(--success)]">
+                          {versionHistoryLabels.current}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="muted">
+                      {versionHistoryLabels.number.replace("{value}", version.documentNumber)}
+                    </span>
+                    <span className="muted">
+                      {versionHistoryLabels.date.replace("{value}", version.documentDate)}
+                    </span>
+                    <span className="muted">
+                      {versionHistoryLabels.supplier.replace("{value}", version.supplierName)}
+                    </span>
+                    <span className="muted">
+                      {versionHistoryLabels.recipient.replace("{value}", version.recipientName)}
+                    </span>
+                    <span className="font-semibold tabular-nums">{version.totalAmount}</span>
+                    {!version.isCurrent ? (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button
+                          disabled={isVersionSelectionPending}
+                          onClick={() => selectVersion(version.id)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          {isVersionSelectionPending ? (
+                            <LoaderCircle className="animate-spin" />
+                          ) : null}
+                          {versionHistoryLabels.makeCurrent}
+                        </Button>
+                        {canDeleteDocuments ? (
+                          <DeleteDocumentButton documentId={version.id} locale={locale} />
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </section>
+                ))}
+              </div>
+              {versionSelectionError ? (
+                <p className="text-sm text-[color:var(--destructive)]">{versionSelectionError}</p>
+              ) : null}
+            </div>
+          </TableCell>
+        </TableRow>
+      ) : null}
+    </Fragment>
   );
 }
 
 function RegistrySectionRow({
   title,
   colSpan,
+  total,
 }: {
   title: string;
   colSpan: number;
+  total?: string;
 }) {
+  if (total) {
+    return (
+      <TableRow className="bg-[color:var(--panel-strong)]">
+        <TableCell className="py-3 text-xs font-semibold tracking-[0.08em] uppercase" colSpan={4}>
+          {title}
+        </TableCell>
+        <TableCell className="whitespace-nowrap py-3 text-sm font-semibold normal-case tracking-normal tabular-nums">
+          {total}
+        </TableCell>
+        <TableCell colSpan={colSpan - 5} />
+      </TableRow>
+    );
+  }
+
   return (
     <TableRow className="bg-[color:var(--panel-strong)]">
       <TableCell
@@ -341,6 +710,14 @@ export function DocumentRegistry({
   emptySearchLabel,
   searchPlaceholder,
   searchLabels,
+  dateRangeLabels,
+  supplierFilterPlaceholder,
+  recipientFilterPlaceholder,
+  supplierNames,
+  recipientNames,
+  typeFilterLabel,
+  typeFilterPlaceholder,
+  documentTypes,
   statusFilterLabel,
   statusFilterPlaceholder,
   sortAlphabet,
@@ -352,25 +729,27 @@ export function DocumentRegistry({
   reconciliationLabel,
   tableLabels,
   mappingStatusLabels,
+  versionHistoryLabels,
   actionableDocuments,
   completedGroups,
 }: DocumentRegistryProps) {
   const [openMonthKey, setOpenMonthKey] = useState<string | null>(null);
   const [searchQueries, setSearchQueries] = useState<SearchQueries>({
     document: "",
-    supplier: "",
-    recipient: "",
     amount: "",
     rows: "",
   });
+  const [supplierFilter, setSupplierFilter] = useState<string | null>(null);
+  const [documentDateFrom, setDocumentDateFrom] = useState("");
+  const [documentDateTo, setDocumentDateTo] = useState("");
+  const [recipientFilter, setRecipientFilter] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<MappingStatusKey | null>(null);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("ascending");
   const deferredSearchQueries = useDeferredValue(searchQueries);
   const normalizedSearchQueries: SearchQueries = {
     document: deferredSearchQueries.document.trim().toLocaleLowerCase(locale),
-    supplier: deferredSearchQueries.supplier.trim().toLocaleLowerCase(locale),
-    recipient: deferredSearchQueries.recipient.trim().toLocaleLowerCase(locale),
     amount: deferredSearchQueries.amount.trim().toLocaleLowerCase(locale),
     rows: deferredSearchQueries.rows.trim().toLocaleLowerCase(locale),
   };
@@ -381,14 +760,13 @@ export function DocumentRegistry({
       document.documentSearchValue
         .toLocaleLowerCase(locale)
         .includes(normalizedSearchQueries.document)) &&
-    (!normalizedSearchQueries.supplier ||
-      document.supplierName
-        ?.toLocaleLowerCase(locale)
-        .includes(normalizedSearchQueries.supplier)) &&
-    (!normalizedSearchQueries.recipient ||
-      document.recipientName
-        ?.toLocaleLowerCase(locale)
-        .includes(normalizedSearchQueries.recipient)) &&
+    (!documentDateFrom ||
+      (document.documentDateIso !== null && document.documentDateIso >= documentDateFrom)) &&
+    (!documentDateTo ||
+      (document.documentDateIso !== null && document.documentDateIso <= documentDateTo)) &&
+    (!typeFilter || document.documentTypeId === typeFilter) &&
+    (!supplierFilter || document.supplierName === supplierFilter) &&
+    (!recipientFilter || document.recipientName === recipientFilter) &&
     (!normalizedSearchQueries.amount ||
       document.totalAmount?.toLocaleLowerCase(locale).includes(normalizedSearchQueries.amount)) &&
     (!statusFilter || document.mappingStatus === statusFilter) &&
@@ -424,11 +802,22 @@ export function DocumentRegistry({
   const filteredActionableDocuments = sortDocuments(actionableDocuments.filter(matchesSearch));
   const filteredCompletedGroups = completedGroups.flatMap((group) => {
     const documents = sortDocuments(group.documents.filter(matchesSearch));
-    return documents.length > 0 ? [{ ...group, count: documents.length, documents }] : [];
+    const total = formatRegistryMoneyTotals({ documents, locale });
+
+    return documents.length > 0 ? [{ ...group, count: documents.length, documents, total }] : [];
+  });
+  const unallocatedTotal = formatRegistryMoneyTotals({
+    documents: filteredActionableDocuments,
+    locale,
   });
   const hasDocuments = filteredActionableDocuments.length > 0 || filteredCompletedGroups.length > 0;
   const hasActiveSearch =
-    statusFilter !== null || Object.values(searchQueries).some((query) => Boolean(query.trim()));
+    typeFilter !== null ||
+    statusFilter !== null ||
+    supplierFilter !== null ||
+    recipientFilter !== null ||
+    Boolean(documentDateFrom || documentDateTo) ||
+    Object.values(searchQueries).some((query) => Boolean(query.trim()));
 
   const handleSearchChange = (key: SearchKey, value: string) => {
     setSearchQueries((queries) => ({ ...queries, [key]: value }));
@@ -446,7 +835,7 @@ export function DocumentRegistry({
 
   return (
     <TableShell>
-      <Table>
+      <Table className="registry-table">
         <TableHeader>
           <TableRow>
             <SortableTableHead
@@ -458,6 +847,7 @@ export function DocumentRegistry({
             >
               {tableLabels.document}
             </SortableTableHead>
+            <TableHead>{tableLabels.type}</TableHead>
             <SortableTableHead
               onSort={handleSort}
               sortDirection={sortKey === "supplierName" ? sortDirection : null}
@@ -487,31 +877,52 @@ export function DocumentRegistry({
             </SortableTableHead>
             <TableHead>{tableLabels.status}</TableHead>
             <TableHead>{tableLabels.rows}</TableHead>
+            <TableHead>{tableLabels.taxInvoice}</TableHead>
             <TableHead>{tableLabels.actions}</TableHead>
           </TableRow>
           <TableRow className="bg-[color:var(--panel-strong)]">
             <TableHead className="p-2 normal-case tracking-normal">
-              <RegistrySearchInput
-                label={searchLabels.document}
-                onChange={(value) => handleSearchChange("document", value)}
-                placeholder={searchPlaceholder}
-                value={searchQueries.document}
+              <div className="flex items-center gap-1">
+                <RegistrySearchInput
+                  label={searchLabels.document}
+                  onChange={(value) => handleSearchChange("document", value)}
+                  placeholder={searchPlaceholder}
+                  value={searchQueries.document}
+                />
+                <DocumentDateRangeFilter
+                  from={documentDateFrom}
+                  labels={dateRangeLabels}
+                  onFromChange={setDocumentDateFrom}
+                  onToChange={setDocumentDateTo}
+                  to={documentDateTo}
+                />
+              </div>
+            </TableHead>
+            <TableHead className="p-2 normal-case tracking-normal">
+              <DocumentTypeFilter
+                documentTypes={documentTypes}
+                label={typeFilterLabel}
+                onChange={setTypeFilter}
+                placeholder={typeFilterPlaceholder}
+                value={typeFilter}
               />
             </TableHead>
             <TableHead className="p-2 normal-case tracking-normal">
-              <RegistrySearchInput
+              <PartyNameFilter
                 label={searchLabels.supplier}
-                onChange={(value) => handleSearchChange("supplier", value)}
-                placeholder={searchPlaceholder}
-                value={searchQueries.supplier}
+                names={supplierNames}
+                onChange={setSupplierFilter}
+                placeholder={supplierFilterPlaceholder}
+                value={supplierFilter}
               />
             </TableHead>
             <TableHead className="p-2 normal-case tracking-normal">
-              <RegistrySearchInput
+              <PartyNameFilter
                 label={searchLabels.recipient}
-                onChange={(value) => handleSearchChange("recipient", value)}
-                placeholder={searchPlaceholder}
-                value={searchQueries.recipient}
+                names={recipientNames}
+                onChange={setRecipientFilter}
+                placeholder={recipientFilterPlaceholder}
+                value={recipientFilter}
               />
             </TableHead>
             <TableHead className="p-2 normal-case tracking-normal">
@@ -540,12 +951,13 @@ export function DocumentRegistry({
               />
             </TableHead>
             <TableHead aria-hidden="true" className="p-2" />
+            <TableHead aria-hidden="true" className="p-2" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {!hasDocuments ? (
             <TableRow>
-              <TableCell className="muted" colSpan={7}>
+              <TableCell className="muted" colSpan={9}>
                 {hasActiveSearch ? emptySearchLabel : emptyRegistryLabel}
               </TableCell>
             </TableRow>
@@ -553,7 +965,11 @@ export function DocumentRegistry({
             <>
               {filteredActionableDocuments.length > 0 ? (
                 <>
-                  <RegistrySectionRow colSpan={7} title={actionableSectionTitle} />
+                  <RegistrySectionRow
+                    colSpan={9}
+                    title={actionableSectionTitle}
+                    total={unallocatedTotal.length > 0 ? unallocatedTotal.join(" · ") : "—"}
+                  />
                   {filteredActionableDocuments.map((document) => (
                     <RegistryDocumentTableRow
                       canDeleteDocuments={canDeleteDocuments}
@@ -562,6 +978,7 @@ export function DocumentRegistry({
                       locale={locale}
                       mappingStatusLabels={mappingStatusLabels}
                       pendingLabel={pendingLabel}
+                      versionHistoryLabels={versionHistoryLabels}
                     />
                   ))}
                 </>
@@ -569,7 +986,7 @@ export function DocumentRegistry({
 
               {filteredCompletedGroups.length > 0 ? (
                 <>
-                  <RegistrySectionRow colSpan={7} title={completedSectionTitle} />
+                  <RegistrySectionRow colSpan={9} title={completedSectionTitle} />
                   {filteredCompletedGroups.map((group) => {
                     const isOpen = hasActiveSearch || openMonthKey === group.key;
                     const reconciliationPath = getRegistryReconciliationPath(group.key);
@@ -577,8 +994,8 @@ export function DocumentRegistry({
                     return (
                       <Fragment key={group.key}>
                         <TableRow className="bg-[color:var(--panel)]">
-                          <TableCell className="p-0" colSpan={7}>
-                            <div className="flex items-stretch">
+                          <TableCell className="p-0" colSpan={4}>
+                            <div className="flex h-full items-stretch">
                               <Button
                                 aria-expanded={isOpen}
                                 className="h-auto min-w-0 flex-1 justify-between rounded-none px-4 py-3 text-left text-sm font-semibold tracking-[0.06em] uppercase"
@@ -602,10 +1019,17 @@ export function DocumentRegistry({
                                 </span>
                                 <span className="sr-only">{completedMonthToggleLabel}</span>
                               </Button>
-                              {reconciliationPath ? (
+                            </div>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap py-3 text-sm font-semibold tabular-nums">
+                            {group.total.length > 0 ? group.total.join(" · ") : "—"}
+                          </TableCell>
+                          <TableCell className="p-0" colSpan={4}>
+                            {reconciliationPath ? (
+                              <div className="flex h-full items-center justify-end p-1">
                                 <Button
                                   asChild
-                                  className="m-1 h-auto shrink-0 gap-2 rounded-xl px-3 text-xs font-semibold tracking-[0.05em] uppercase"
+                                  className="h-auto shrink-0 gap-2 rounded-xl px-3 text-xs font-semibold tracking-[0.05em] uppercase"
                                   size="sm"
                                   variant="outline"
                                 >
@@ -614,8 +1038,8 @@ export function DocumentRegistry({
                                     {reconciliationLabel}
                                   </Link>
                                 </Button>
-                              ) : null}
-                            </div>
+                              </div>
+                            ) : null}
                           </TableCell>
                         </TableRow>
                         {isOpen
@@ -627,6 +1051,7 @@ export function DocumentRegistry({
                                 locale={locale}
                                 mappingStatusLabels={mappingStatusLabels}
                                 pendingLabel={pendingLabel}
+                                versionHistoryLabels={versionHistoryLabels}
                               />
                             ))
                           : null}

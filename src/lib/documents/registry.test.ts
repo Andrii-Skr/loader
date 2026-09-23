@@ -2,10 +2,68 @@ import { describe, expect, it } from "vitest";
 
 import { getDocumentMappingStatus } from "@/lib/documents/mapping-status";
 import {
+  calculateRegistryMoneyTotals,
+  formatRegistryMoneyTotals,
   formatRegistryMonthLabel,
   getRegistryReconciliationPath,
   splitRegistryDocuments,
 } from "@/lib/documents/registry";
+
+describe("registry money totals", () => {
+  it("adds document amounts by currency and excludes missing amounts", () => {
+    expect(
+      calculateRegistryMoneyTotals([
+        { totalAmountRaw: "120.25", currency: "UAH" },
+        { totalAmountRaw: "79.75", currency: "UAH" },
+        { totalAmountRaw: "50.00", currency: "RUB" },
+        { totalAmountRaw: null, currency: "UAH" },
+      ]),
+    ).toEqual([
+      { currency: "RUB", amountMinor: 5000n },
+      { currency: "UAH", amountMinor: 20000n },
+    ]);
+  });
+
+  it("retains precision when the summed amount exceeds JavaScript number precision", () => {
+    expect(
+      calculateRegistryMoneyTotals([
+        { totalAmountRaw: "999999999999999.99", currency: "UAH" },
+        { totalAmountRaw: "0.01", currency: "UAH" },
+      ]),
+    ).toEqual([{ currency: "UAH", amountMinor: 100000000000000000n }]);
+  });
+
+  it("returns no totals for documents without a known amount", () => {
+    expect(
+      formatRegistryMoneyTotals({
+        documents: [{ totalAmountRaw: null, currency: "UAH" }],
+        locale: "ru",
+      }),
+    ).toEqual([]);
+  });
+
+  it("formats separate currency totals for the selected locale", () => {
+    expect(
+      formatRegistryMoneyTotals({
+        documents: [
+          { totalAmountRaw: "12.50", currency: "UAH" },
+          { totalAmountRaw: "7.50", currency: "UAH" },
+          { totalAmountRaw: "10.00", currency: "RUB" },
+        ],
+        locale: "en",
+      }),
+    ).toEqual(["10.00 ₽", "20.00 ₴"]);
+  });
+
+  it("uses a stable locale-specific separator for server and client rendering", () => {
+    expect(
+      formatRegistryMoneyTotals({
+        documents: [{ totalAmountRaw: "1234.50", currency: "UAH" }],
+        locale: "uk",
+      }),
+    ).toEqual(["1 234,50 ₴"]);
+  });
+});
 
 describe("formatRegistryMonthLabel", () => {
   it("formats month and year without locale-specific year suffixes", () => {

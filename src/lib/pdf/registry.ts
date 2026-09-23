@@ -1,3 +1,4 @@
+import { parseUaInvoiceDocument } from "@/lib/pdf/invoice-document-parser";
 import {
   detectVatInvoiceRuV1,
   parsePublicationIssueDescriptionRuV1,
@@ -98,6 +99,54 @@ export const detectAndParseInvoice = (rawText: string) => {
     parserVersion: parser.parserVersion,
     parsed: parser.parse(rawText),
   };
+};
+
+export type DetectedDocument = {
+  contour: DocumentContour;
+  parserVersion: string;
+  documentTypeId: 1 | 2;
+  parsed: ParsedVatInvoice;
+  parsePublicationIssueDescription: InvoiceParser["parsePublicationIssueDescription"];
+  lookupLocale: string;
+};
+
+export const detectAndParseDocument = (rawText: string): DetectedDocument => {
+  let invoiceDetectionError: InvoiceDetectionError | null = null;
+
+  try {
+    const detectedTaxInvoice = detectAndParseInvoice(rawText);
+    const parser = getInvoiceParserByContour(detectedTaxInvoice.contour);
+
+    return {
+      ...detectedTaxInvoice,
+      documentTypeId: 1,
+      parsePublicationIssueDescription: parser.parsePublicationIssueDescription,
+      lookupLocale: parser.lookupLocale,
+    };
+  } catch (error) {
+    if (!(error instanceof InvoiceDetectionError) || error.code === "documentContourAmbiguous") {
+      throw error;
+    }
+
+    invoiceDetectionError = error;
+  }
+
+  try {
+    return {
+      contour: "UA",
+      parserVersion: "invoice-ua-pdf-v2",
+      documentTypeId: 2,
+      parsed: parseUaInvoiceDocument(rawText),
+      parsePublicationIssueDescription: parsePublicationIssueDescriptionUaV1,
+      lookupLocale: "uk-UA",
+    };
+  } catch (error) {
+    if (invoiceDetectionError) {
+      throw invoiceDetectionError;
+    }
+
+    throw error;
+  }
 };
 
 export const normalizeLookupKey = (value: string, locale: string): string =>

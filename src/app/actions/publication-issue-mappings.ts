@@ -84,6 +84,7 @@ const saveRegistrySchema: z.ZodType<SavePublicationIssueMappingRegistryInput> = 
   issueMatches: z.array(
     z.object({
       publicationIssueId: z.number().int().positive(),
+      documentId: z.number().int().positive().optional(),
       matchedIssue: z
         .object({
           externalEditionId: z.number().int().positive(),
@@ -438,100 +439,146 @@ export const savePublicationIssueMappingRegistry = async (
         };
       });
 
-      const preparedIssueMatches = parsedInput.documentId
-        ? await Promise.all(
-            canonicalIssueMatches.map(async (issueMatch) => {
-              const specialDocuments = await prisma.specialDocument.findMany({
-                where: {
-                  documentId: parsedInput.documentId,
-                  publicationIssueId: issueMatch.publicationIssueId,
-                },
-                select: {
-                  id: true,
-                  quantity: true,
-                  unitPrice: true,
-                  lineBaseAmount: true,
-                  lineVatAmount: true,
-                  lineTotalAmount: true,
-                  document: { select: { currency: true } },
-                  _count: { select: { externalMatches: true } },
-                },
-              });
-              const providedDetails = issueMatch.matchDetails ?? [];
+      const issueMatchesWithDocument = canonicalIssueMatches.flatMap((issueMatch) => {
+        const documentId = issueMatch.documentId ?? parsedInput.documentId;
 
-              if (providedDetails.length > 0 && specialDocuments.length !== 1) {
-                return { ok: false as const };
-              }
+        return documentId ? [{ ...issueMatch, documentId }] : [];
+      });
+      const preparedIssueMatches =
+        issueMatchesWithDocument.length > 0
+          ? await Promise.all(
+              issueMatchesWithDocument.map(async (issueMatch) => {
+                const specialDocuments = await prisma.specialDocument.findMany({
+                  where: {
+                    documentId: issueMatch.documentId,
+                    publicationIssueId: issueMatch.publicationIssueId,
+                  },
+                  select: {
+                    id: true,
+                    quantity: true,
+                    unitPrice: true,
+                    lineBaseAmount: true,
+                    lineVatAmount: true,
+                    lineTotalAmount: true,
+                    document: { select: { currency: true } },
+                    _count: { select: { externalMatches: true } },
+                    externalMatches: {
+                      orderBy: [{ isPrimary: "desc" }, { id: "asc" }],
+                      select: {
+                        externalEditionId: true,
+                        externalIssueId: true,
+                        externalIssueNumber: true,
+                        isPrimary: true,
+                      },
+                    },
+                  },
+                });
+                const providedDetails = issueMatch.matchDetails ?? [];
 
-              const detailPayloadByDocumentId = new Map<number, DocumentExternalMatchDetailDto[]>();
-
-              if (providedDetails.length > 0) {
-                const targetRow = specialDocuments[0];
-
-                if (
-                  !targetRow ||
-                  !validateDetailTotalsAgainstRow({ details: providedDetails, row: targetRow })
-                ) {
+                if (providedDetails.length > 0 && specialDocuments.length !== 1) {
                   return { ok: false as const };
                 }
 
-                detailPayloadByDocumentId.set(targetRow.id, providedDetails);
-              } else if (issueMatch.matchedIssue) {
-                for (const row of specialDocuments) {
-                  if (row._count.externalMatches > 0) {
-                    continue;
+                const detailPayloadByDocumentId = new Map<
+                  number,
+                  DocumentExternalMatchDetailDto[]
+                >();
+                const preservedDocumentMatches: Array<{
+                  specialDocumentId: number;
+                  externalEditionId: number;
+                  externalIssueId: number;
+                  externalIssueNumber: string;
+                  matchCount: number;
+                }> = [];
+
+                if (providedDetails.length > 0) {
+                  const targetRow = specialDocuments[0];
+
+                  if (
+                    !targetRow ||
+                    !validateDetailTotalsAgainstRow({ details: providedDetails, row: targetRow })
+                  ) {
+                    return { ok: false as const };
                   }
 
-                  detailPayloadByDocumentId.set(row.id, [
-                    buildSingleDetailFromRow({
-                      matchedIssue: issueMatch.matchedIssue,
-                      row: { ...row, currency: row.document.currency },
-                    }),
-                  ]);
-                }
-              }
+                  detailPayloadByDocumentId.set(targetRow.id, providedDetails);
+                } else if (issueMatch.matchedIssue) {
+                  for (const row of specialDocuments) {
+                    if (row._count.externalMatches > 0) {
+                      const primaryMatch = row.externalMatches[0];
 
-              try {
-                const writes = Array.from(detailPayloadByDocumentId.entries()).flatMap(
-                  ([specialDocumentId, details]) =>
-                    details.map((detail) => ({
-                      specialDocumentId,
-                      externalEditionId: detail.externalEditionId,
-                      externalEditionName: detail.externalEditionName,
-                      externalIssueId: detail.externalIssueId,
-                      externalIssueNumber: detail.externalIssueNumber,
-                      quantity: new Prisma.Decimal(detail.quantity),
-                      unitPrice: toDecimal(detail.unitPrice),
-                      lineBaseAmount: toDecimal(detail.lineBaseAmount),
-                      lineVatAmount: toDecimal(detail.lineVatAmount),
-                      lineTotalAmount: toDecimal(detail.lineTotalAmount),
-                      currency: detail.currency,
-                      isPrimary: detail.isPrimary,
-                    })),
-                );
-                return {
-                  ok: true as const,
-                  documentMatchSummaries: Array.from(detailPayloadByDocumentId.entries()).map(
-                    ([specialDocumentId, documentDetails]) => ({
-                      specialDocumentId,
-                      primaryDetail: pickPrimaryDetail(documentDetails),
-                      matchCount: documentDetails.length,
-                    }),
-                  ),
-                  specialDocumentIds:
-                    providedDetails.length > 0
-                      ? specialDocuments.map((row) => row.id)
-                      : specialDocuments
-                          .filter((row) => row._count.externalMatches === 0)
-                          .map((row) => row.id),
-                  writes,
-                };
-              } catch {
-                return { ok: false as const };
-              }
-            }),
-          )
-        : [];
+                      // A detailed allocation is authoritative and must not be overwritten by a
+                      // standard mapping save. If it already agrees with the selected issue, it is
+                      // nevertheless a valid confirmation for this document.
+                      if (
+                        primaryMatch?.externalEditionId ===
+                          issueMatch.matchedIssue.externalEditionId &&
+                        primaryMatch.externalIssueId === issueMatch.matchedIssue.externalIssueId &&
+                        primaryMatch.externalIssueNumber !== null
+                      ) {
+                        preservedDocumentMatches.push({
+                          specialDocumentId: row.id,
+                          externalEditionId: primaryMatch.externalEditionId,
+                          externalIssueId: primaryMatch.externalIssueId,
+                          externalIssueNumber: primaryMatch.externalIssueNumber,
+                          matchCount: row.externalMatches.length,
+                        });
+                      }
+
+                      continue;
+                    }
+
+                    detailPayloadByDocumentId.set(row.id, [
+                      buildSingleDetailFromRow({
+                        matchedIssue: issueMatch.matchedIssue,
+                        row: { ...row, currency: row.document.currency },
+                      }),
+                    ]);
+                  }
+                }
+
+                try {
+                  const writes = Array.from(detailPayloadByDocumentId.entries()).flatMap(
+                    ([specialDocumentId, details]) =>
+                      details.map((detail) => ({
+                        specialDocumentId,
+                        externalEditionId: detail.externalEditionId,
+                        externalEditionName: detail.externalEditionName,
+                        externalIssueId: detail.externalIssueId,
+                        externalIssueNumber: detail.externalIssueNumber,
+                        quantity: new Prisma.Decimal(detail.quantity),
+                        unitPrice: toDecimal(detail.unitPrice),
+                        lineBaseAmount: toDecimal(detail.lineBaseAmount),
+                        lineVatAmount: toDecimal(detail.lineVatAmount),
+                        lineTotalAmount: toDecimal(detail.lineTotalAmount),
+                        currency: detail.currency,
+                        isPrimary: detail.isPrimary,
+                      })),
+                  );
+                  return {
+                    ok: true as const,
+                    documentMatchSummaries: Array.from(detailPayloadByDocumentId.entries()).map(
+                      ([specialDocumentId, documentDetails]) => ({
+                        specialDocumentId,
+                        primaryDetail: pickPrimaryDetail(documentDetails),
+                        matchCount: documentDetails.length,
+                      }),
+                    ),
+                    specialDocumentIds:
+                      providedDetails.length > 0
+                        ? specialDocuments.map((row) => row.id)
+                        : specialDocuments
+                            .filter((row) => row._count.externalMatches === 0)
+                            .map((row) => row.id),
+                    preservedDocumentMatches,
+                    writes,
+                  };
+                } catch {
+                  return { ok: false as const };
+                }
+              }),
+            )
+          : [];
 
       if (preparedIssueMatches.some((result) => result.ok === false)) {
         return { errorKey: "validationFailed" };
@@ -542,42 +589,53 @@ export const savePublicationIssueMappingRegistry = async (
           replacements: preparedPublicationMappings,
           tx,
         });
-
         for (const result of preparedIssueMatches) {
           if (!result.ok) {
             continue;
           }
 
-          if (result.specialDocumentIds.length === 0) {
-            continue;
+          if (result.specialDocumentIds.length > 0) {
+            await tx.specialDocumentExternalMatch.deleteMany({
+              where: { specialDocumentId: { in: result.specialDocumentIds } },
+            });
+
+            if (result.writes.length > 0) {
+              await tx.specialDocumentExternalMatch.createMany({ data: result.writes });
+            }
+
+            const summaryBySpecialDocumentId = new Map(
+              result.documentMatchSummaries.map((summary) => [summary.specialDocumentId, summary]),
+            );
+
+            for (const specialDocumentId of result.specialDocumentIds) {
+              const summary = summaryBySpecialDocumentId.get(specialDocumentId);
+              const primaryDetail = summary?.primaryDetail ?? null;
+              const matchCount = summary?.matchCount ?? 0;
+
+              await tx.specialDocument.update({
+                where: { id: specialDocumentId },
+                data: {
+                  publicationIssueConfirmedAt: primaryDetail ? new Date() : null,
+                  matchedExternalEditionId: primaryDetail?.externalEditionId ?? null,
+                  matchedExternalIssueId: primaryDetail?.externalIssueId ?? null,
+                  matchedExternalIssueNumber: primaryDetail?.externalIssueNumber ?? null,
+                  hasMultipleExternalMatches: matchCount > 1,
+                  externalMatchCount: matchCount,
+                },
+              });
+            }
           }
 
-          await tx.specialDocumentExternalMatch.deleteMany({
-            where: { specialDocumentId: { in: result.specialDocumentIds } },
-          });
-
-          if (result.writes.length > 0) {
-            await tx.specialDocumentExternalMatch.createMany({ data: result.writes });
-          }
-
-          const summaryBySpecialDocumentId = new Map(
-            result.documentMatchSummaries.map((summary) => [summary.specialDocumentId, summary]),
-          );
-
-          for (const specialDocumentId of result.specialDocumentIds) {
-            const summary = summaryBySpecialDocumentId.get(specialDocumentId);
-            const primaryDetail = summary?.primaryDetail ?? null;
-            const matchCount = summary?.matchCount ?? 0;
-
+          for (const preservedMatch of result.preservedDocumentMatches) {
             await tx.specialDocument.update({
-              where: { id: specialDocumentId },
+              where: { id: preservedMatch.specialDocumentId },
               data: {
-                publicationIssueConfirmedAt: primaryDetail ? new Date() : null,
-                matchedExternalEditionId: primaryDetail?.externalEditionId ?? null,
-                matchedExternalIssueId: primaryDetail?.externalIssueId ?? null,
-                matchedExternalIssueNumber: primaryDetail?.externalIssueNumber ?? null,
-                hasMultipleExternalMatches: matchCount > 1,
-                externalMatchCount: matchCount,
+                publicationIssueConfirmedAt: new Date(),
+                matchedExternalEditionId: preservedMatch.externalEditionId,
+                matchedExternalIssueId: preservedMatch.externalIssueId,
+                matchedExternalIssueNumber: preservedMatch.externalIssueNumber,
+                hasMultipleExternalMatches: preservedMatch.matchCount > 1,
+                externalMatchCount: preservedMatch.matchCount,
               },
             });
           }

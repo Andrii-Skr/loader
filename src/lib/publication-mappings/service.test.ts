@@ -3,11 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const prismaMocks = vi.hoisted(() => {
   const publicationIssueFindUnique = vi.fn();
   const publicationFindMany = vi.fn();
-  const issueFindMany = vi.fn();
   const publicationDeleteMany = vi.fn();
   const publicationCreateMany = vi.fn();
-  const issueDeleteMany = vi.fn();
-  const issueCreateMany = vi.fn();
   const externalEditionSourceUpsert = vi.fn();
   const tx = {
     externalEditionSource: {
@@ -17,17 +14,12 @@ const prismaMocks = vi.hoisted(() => {
       deleteMany: publicationDeleteMany,
       createMany: publicationCreateMany,
     },
-    issueNumberMapping: {
-      deleteMany: issueDeleteMany,
-      createMany: issueCreateMany,
-    },
   };
 
   return {
     externalEditionSourceUpsert,
     publicationIssueFindUnique,
     publicationMappingFindMany: publicationFindMany,
-    issueNumberMappingFindMany: issueFindMany,
     transaction: vi.fn(async (callback: (txArg: typeof tx) => Promise<unknown>) => callback(tx)),
     tx,
   };
@@ -35,7 +27,6 @@ const prismaMocks = vi.hoisted(() => {
 
 const externalRepositoryMocks = vi.hoisted(() => ({
   getExternalEditionsByIds: vi.fn(),
-  getExternalIssueNumbersByIds: vi.fn(),
   searchExternalEditions: vi.fn(),
   searchExternalIssueNumbersByEdition: vi.fn(),
 }));
@@ -52,10 +43,6 @@ vi.mock("@/lib/prisma", () => ({
       findMany: prismaMocks.publicationMappingFindMany,
       deleteMany: vi.fn(),
     },
-    issueNumberMapping: {
-      findMany: prismaMocks.issueNumberMappingFindMany,
-      deleteMany: vi.fn(),
-    },
     $transaction: prismaMocks.transaction,
   },
 }));
@@ -69,7 +56,6 @@ vi.mock("@/lib/publication-mappings/config", () => ({
 }));
 
 import {
-  replaceIssueNumberMappings,
   replacePublicationMappings,
   searchIssueNumberCandidates,
   searchPublicationCandidates,
@@ -284,64 +270,6 @@ describe("replacePublicationMappings", () => {
           sourceId: 7,
           externalEditionId: 101,
           externalEditionName: "1000 порад. Кейворди (R)",
-        },
-      ],
-    });
-    expect(mappings).toHaveLength(1);
-  });
-});
-
-describe("replaceIssueNumberMappings", () => {
-  beforeEach(() => {
-    prismaMocks.externalEditionSourceUpsert.mockReset();
-    prismaMocks.issueNumberMappingFindMany.mockReset();
-    prismaMocks.transaction.mockClear();
-    prismaMocks.tx.issueNumberMapping.deleteMany.mockReset();
-    prismaMocks.tx.issueNumberMapping.createMany.mockReset();
-    externalRepositoryMocks.getExternalIssueNumbersByIds.mockReset();
-
-    prismaMocks.externalEditionSourceUpsert.mockResolvedValue({
-      id: 7,
-      code: "idz-ukr",
-      displayName: "IDZ-UKR",
-      schemaName: "idz_ukr",
-    });
-
-    externalRepositoryMocks.getExternalIssueNumbersByIds.mockResolvedValue([
-      { id: 202, number: "04-26" },
-    ]);
-    prismaMocks.issueNumberMappingFindMany.mockResolvedValue([
-      {
-        id: 1,
-        source: {
-          code: "idz-ukr",
-          displayName: "IDZ-UKR",
-        },
-        externalIssueId: 202,
-        externalIssueNumber: "04-26",
-      },
-    ]);
-  });
-
-  it("deduplicates the same external issue number before createMany", async () => {
-    const mappings = await replaceIssueNumberMappings({
-      issueNumberId: 9,
-      selections: [{ externalIssueId: 202 }, { externalIssueId: 202 }],
-    });
-
-    expect(prismaMocks.tx.issueNumberMapping.deleteMany).toHaveBeenCalledWith({
-      where: {
-        issueNumberId: 9,
-        sourceId: 7,
-      },
-    });
-    expect(prismaMocks.tx.issueNumberMapping.createMany).toHaveBeenCalledWith({
-      data: [
-        {
-          issueNumberId: 9,
-          sourceId: 7,
-          externalIssueId: 202,
-          externalIssueNumber: "04-26",
         },
       ],
     });

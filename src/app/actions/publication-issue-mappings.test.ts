@@ -289,7 +289,48 @@ describe("saveDocumentLineAllocations", () => {
     );
   });
 
-  it("preserves existing allocations during a standard registry save", async () => {
+  it("writes a selected issue to its own document from the global registry", async () => {
+    specialDocumentFindManyMock.mockResolvedValue([
+      {
+        id: 20,
+        quantity: new Prisma.Decimal("10"),
+        unitPrice: new Prisma.Decimal("2"),
+        lineBaseAmount: new Prisma.Decimal("20"),
+        lineVatAmount: new Prisma.Decimal("4"),
+        lineTotalAmount: new Prisma.Decimal("24"),
+        document: { currency: "UAH" },
+        _count: { externalMatches: 0 },
+        externalMatches: [],
+      },
+    ]);
+
+    await expect(
+      savePublicationIssueMappingRegistry({
+        locale: "ru",
+        publicationSelections: [],
+        issueMatches: [
+          {
+            publicationIssueId: 4,
+            documentId: 55,
+            matchedIssue: {
+              externalEditionId: 1,
+              externalEditionName: "Edition 1",
+              externalIssueId: 101,
+              externalIssueNumber: "№101",
+            },
+          },
+        ],
+      }),
+    ).resolves.toEqual({ errorKey: null });
+
+    expect(specialDocumentFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ documentId: 55 }),
+      }),
+    );
+  });
+
+  it("confirms matching existing allocations during a document registry save", async () => {
     specialDocumentFindManyMock.mockResolvedValue([
       {
         id: 20,
@@ -300,6 +341,20 @@ describe("saveDocumentLineAllocations", () => {
         lineTotalAmount: new Prisma.Decimal("24"),
         document: { currency: "UAH" },
         _count: { externalMatches: 2 },
+        externalMatches: [
+          {
+            externalEditionId: 1,
+            externalIssueId: 101,
+            externalIssueNumber: "Canonical issue 101",
+            isPrimary: true,
+          },
+          {
+            externalEditionId: 2,
+            externalIssueId: 202,
+            externalIssueNumber: "№202",
+            isPrimary: false,
+          },
+        ],
       },
       {
         id: 21,
@@ -310,6 +365,14 @@ describe("saveDocumentLineAllocations", () => {
         lineTotalAmount: new Prisma.Decimal("12"),
         document: { currency: "UAH" },
         _count: { externalMatches: 1 },
+        externalMatches: [
+          {
+            externalEditionId: 1,
+            externalIssueId: 101,
+            externalIssueNumber: "Canonical issue 101",
+            isPrimary: true,
+          },
+        ],
       },
     ]);
 
@@ -334,6 +397,32 @@ describe("saveDocumentLineAllocations", () => {
 
     expect(deleteManyMock).not.toHaveBeenCalled();
     expect(createManyMock).not.toHaveBeenCalled();
-    expect(updateMock).not.toHaveBeenCalled();
+    expect(updateMock).toHaveBeenCalledTimes(2);
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 20 },
+        data: expect.objectContaining({
+          publicationIssueConfirmedAt: expect.any(Date),
+          matchedExternalEditionId: 1,
+          matchedExternalIssueId: 101,
+          matchedExternalIssueNumber: "Canonical issue 101",
+          externalMatchCount: 2,
+          hasMultipleExternalMatches: true,
+        }),
+      }),
+    );
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 21 },
+        data: expect.objectContaining({
+          publicationIssueConfirmedAt: expect.any(Date),
+          matchedExternalEditionId: 1,
+          matchedExternalIssueId: 101,
+          matchedExternalIssueNumber: "Canonical issue 101",
+          externalMatchCount: 1,
+          hasMultipleExternalMatches: false,
+        }),
+      }),
+    );
   });
 });

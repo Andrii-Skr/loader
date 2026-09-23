@@ -9,7 +9,6 @@ import {
   getExactExternalEditionCounts,
   getExactExternalIssueNumberCounts,
   getExternalEditionsByIds,
-  getExternalIssueNumbersByIds,
   searchExternalEditions,
   searchExternalIssueNumbersByEdition,
 } from "@/lib/publication-mappings/external-repository";
@@ -21,7 +20,6 @@ import {
 } from "@/lib/publication-mappings/matching";
 import type {
   IssueNumberCandidateDto,
-  IssueNumberMappingDto,
   PublicationCandidateDto,
   PublicationMappingDto,
 } from "@/lib/publication-mappings/types";
@@ -61,19 +59,6 @@ const mapPublicationMapping = (mapping: {
   externalEditionName: mapping.externalEditionName,
 });
 
-const mapIssueNumberMapping = (mapping: {
-  id: number;
-  source: { code: string; displayName: string };
-  externalIssueId: number;
-  externalIssueNumber: string;
-}): IssueNumberMappingDto => ({
-  id: mapping.id,
-  sourceCode: mapping.source.code,
-  sourceDisplayName: mapping.source.displayName,
-  externalIssueId: mapping.externalIssueId,
-  externalIssueNumber: mapping.externalIssueNumber,
-});
-
 const getPublicationIssueForMatching = async (
   publicationIssueId: number,
 ): Promise<LocalPublicationIssueLookup | null> =>
@@ -93,20 +78,6 @@ const getPublicationIssueForMatching = async (
           canonicalValue: true,
         },
       },
-    },
-  });
-
-const ensureExternalEditionSource = async () =>
-  prisma.externalEditionSource.upsert({
-    where: { code: getExternalEditionSourceCode() },
-    update: {
-      displayName: getExternalEditionSourceName(),
-      schemaName: getExternalEditionSchema(),
-    },
-    create: {
-      code: getExternalEditionSourceCode(),
-      displayName: getExternalEditionSourceName(),
-      schemaName: getExternalEditionSchema(),
     },
   });
 
@@ -209,23 +180,6 @@ export const getPublicationMappings = async (publicationId: number) => {
   });
 
   return mappings.map(mapPublicationMapping);
-};
-
-export const getIssueNumberMappings = async (issueNumberId: number) => {
-  const mappings = await prisma.issueNumberMapping.findMany({
-    where: { issueNumberId },
-    orderBy: [{ externalIssueNumber: "asc" }],
-    include: {
-      source: {
-        select: {
-          code: true,
-          displayName: true,
-        },
-      },
-    },
-  });
-
-  return mappings.map(mapIssueNumberMapping);
 };
 
 export const searchPublicationCandidates = async ({
@@ -351,69 +305,6 @@ export const replacePublicationMappings = async ({
   });
 
   return getPublicationMappings(publicationId);
-};
-
-export const replaceIssueNumberMappings = async ({
-  issueNumberId,
-  selections,
-}: {
-  issueNumberId: number;
-  selections: Array<{ externalIssueId: number }>;
-}) => {
-  const source = await ensureExternalEditionSource();
-
-  if (selections.length === 0) {
-    await prisma.issueNumberMapping.deleteMany({
-      where: {
-        issueNumberId,
-        sourceId: source.id,
-      },
-    });
-
-    return [];
-  }
-
-  const uniqueSelections = Array.from(
-    new Map(selections.map((selection) => [selection.externalIssueId, selection])).values(),
-  );
-  const issueRows = await getExternalIssueNumbersByIds(
-    uniqueSelections.map((selection) => selection.externalIssueId),
-  );
-  const issueById = new Map(issueRows.map((issue) => [issue.id, issue]));
-
-  const payload = uniqueSelections.flatMap((selection) => {
-    const issue = issueById.get(selection.externalIssueId);
-
-    if (!issue) {
-      return [];
-    }
-
-    return [
-      {
-        issueNumberId,
-        sourceId: source.id,
-        externalIssueId: issue.id,
-        externalIssueNumber: issue.number,
-      },
-    ];
-  });
-
-  await prisma.$transaction(async (tx) => {
-    await tx.issueNumberMapping.deleteMany({
-      where: {
-        issueNumberId,
-        sourceId: source.id,
-      },
-    });
-
-    if (payload.length > 0) {
-      await tx.issueNumberMapping.createMany({
-        data: payload,
-      });
-    }
-  });
-
-  return getIssueNumberMappings(issueNumberId);
 };
 
 export const getExactCandidateCounts = async (

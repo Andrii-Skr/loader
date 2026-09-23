@@ -6,14 +6,6 @@ export type PublicationMappingDto = {
   externalEditionName: string;
 };
 
-export type IssueNumberMappingDto = {
-  id: number;
-  sourceCode: string;
-  sourceDisplayName: string;
-  externalIssueId: number;
-  externalIssueNumber: string;
-};
-
 export type PublicationCandidateDto = {
   externalEditionId: number;
   externalEditionName: string;
@@ -115,6 +107,7 @@ export type SavePublicationIssueMappingRegistryInput = {
   }>;
   issueMatches: Array<{
     publicationIssueId: number;
+    documentId?: number;
     matchDetails?: DocumentExternalMatchDetailDto[];
     matchedIssue: DocumentIssueMatchDto | null;
   }>;
@@ -147,6 +140,7 @@ export type PublicationIssueRegistryItem = PublicationIssueMatchSummary & {
   documentOccurrenceCount: number;
   hasMultipleDocumentIssueMatches: boolean;
   documentIssueMatchCount: number;
+  mappingDocumentId: number | null;
   savedDocumentIssueMatch: DocumentIssueMatchDto | null;
   savedDocumentIssueMatchDetails: DocumentExternalMatchDetailDto[];
 };

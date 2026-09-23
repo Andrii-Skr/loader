@@ -1,3 +1,4 @@
+import { normalizePartyName } from "@/lib/documents/party-name";
 import {
   capture,
   digitsToDate,
@@ -39,8 +40,8 @@ const splitPartyNamesFromBlock = (
 
   if (lines.length >= 2) {
     return {
-      supplierName: lines[0],
-      recipientName: lines[1],
+      supplierName: normalizePartyName(lines[0]),
+      recipientName: normalizePartyName(lines[1]),
     };
   }
 
@@ -62,8 +63,8 @@ const splitPartyNamesFromBlock = (
 
   if (recipientStart > 0) {
     return {
-      supplierName: cleanupPartyName(normalizedBlock.slice(0, recipientStart)),
-      recipientName: cleanupPartyName(normalizedBlock.slice(recipientStart)),
+      supplierName: normalizePartyName(cleanupPartyName(normalizedBlock.slice(0, recipientStart))),
+      recipientName: normalizePartyName(cleanupPartyName(normalizedBlock.slice(recipientStart))),
     };
   }
 
@@ -320,6 +321,9 @@ const parseLineItems = (text: string) => parseCommonLineItems(extractTableSectio
 
 export const detectVatInvoiceUaV1 = (rawText: string): number => {
   const text = rawText.replace(/\r/g, "");
+  if (!/Податкова накладна\s+(?:\d\s*)+\s*\/?\s*\n?\(дата складання\)/u.test(text)) {
+    return 0;
+  }
   let score = 0;
 
   if (/Податкова накладна/u.test(text)) score += 4;

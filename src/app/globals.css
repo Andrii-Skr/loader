@@ -79,8 +79,48 @@ textarea {
 }
 
 .shell {
-  width: 90dvw;
+  width: 96dvw;
   margin: 0 auto;
+}
+
+@media (min-width: 901px) and (max-width: 1399px) {
+  .registry-table {
+    table-layout: fixed;
+  }
+
+  .registry-table th,
+  .registry-table td {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .registry-table thead tr:first-child th:nth-child(1) {
+    width: 17%;
+  }
+  .registry-table thead tr:first-child th:nth-child(2) {
+    width: 10%;
+  }
+  .registry-table thead tr:first-child th:nth-child(3) {
+    width: 13%;
+  }
+  .registry-table thead tr:first-child th:nth-child(4) {
+    width: 13%;
+  }
+  .registry-table thead tr:first-child th:nth-child(5) {
+    width: 11%;
+  }
+  .registry-table thead tr:first-child th:nth-child(6) {
+    width: 10%;
+  }
+  .registry-table thead tr:first-child th:nth-child(7) {
+    width: 7%;
+  }
+  .registry-table thead tr:first-child th:nth-child(8) {
+    width: 8%;
+  }
+  .registry-table thead tr:first-child th:nth-child(9) {
+    width: 11%;
+  }
 }
 
 .eyebrow {

@@ -1,8 +1,42 @@
 import { cache } from "react";
 
-import { Prisma } from "@/generated/prisma/client";
+import { DocumentStatus, Prisma } from "@/generated/prisma/client";
 import { getDocumentMappingStatus } from "@/lib/documents/mapping-status";
 import { prisma } from "@/lib/prisma";
+
+const INVOICE_DOCUMENT_TYPE_ID = 2;
+const selectableInvoiceStatuses: DocumentStatus[] = [
+  DocumentStatus.PROCESSED,
+  DocumentStatus.NEEDS_REVIEW,
+];
+
+const getInvoiceVersionKey = ({
+  documentTypeId,
+  documentContour,
+  documentNumber,
+  documentDate,
+  supplierId,
+}: {
+  documentTypeId: number;
+  documentContour: string | null;
+  documentNumber: string | null;
+  documentDate: Date | null;
+  supplierId: number | null;
+}) => {
+  if (
+    documentTypeId !== INVOICE_DOCUMENT_TYPE_ID ||
+    documentContour === null ||
+    documentContour === "" ||
+    documentNumber === null ||
+    documentNumber === "" ||
+    documentDate === null ||
+    supplierId === null
+  ) {
+    return null;
+  }
+
+  return [documentContour, documentNumber, documentDate.toISOString(), supplierId].join("|");
+};
 
 const getDocumentDetailsLineItemsArgs = () =>
   ({
@@ -41,6 +75,7 @@ const getDocumentDetailsLineItemsArgs = () =>
 export const getDashboardDocuments = cache(async () => {
   try {
     const documents = await prisma.document.findMany({
+      where: { isCurrent: true },
       orderBy: { createdAt: "desc" },
       include: {
         supplier: true,
@@ -79,9 +114,81 @@ export const getDashboardDocuments = cache(async () => {
       },
     });
 
+    const versionFilters = documents.flatMap((document) => {
+      if (
+        document.documentTypeId !== INVOICE_DOCUMENT_TYPE_ID ||
+        document.documentContour === null ||
+        document.documentNumber === null ||
+        document.documentNumber === "" ||
+        document.documentDate === null ||
+        document.supplierId === null
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          documentTypeId: INVOICE_DOCUMENT_TYPE_ID,
+          documentContour: document.documentContour,
+          documentNumber: document.documentNumber,
+          documentDate: document.documentDate,
+          supplierId: document.supplierId,
+        },
+      ];
+    });
+    const invoiceVersions =
+      versionFilters.length > 0
+        ? await prisma.document.findMany({
+            where: {
+              AND: [
+                { OR: versionFilters },
+                {
+                  OR: [
+                    { isCurrent: true },
+                    { extractionStatus: { in: selectableInvoiceStatuses } },
+                  ],
+                },
+              ],
+            },
+            orderBy: [{ revision: "desc" }, { id: "desc" }],
+            select: {
+              id: true,
+              documentTypeId: true,
+              documentContour: true,
+              documentNumber: true,
+              documentDate: true,
+              supplierId: true,
+              sourceFileName: true,
+              revision: true,
+              isCurrent: true,
+              totalAmount: true,
+              currency: true,
+              supplier: { select: { name: true } },
+              recipient: { select: { name: true } },
+            },
+          })
+        : [];
+    const invoiceVersionsByKey = new Map<string, (typeof invoiceVersions)[number][]>();
+
+    for (const version of invoiceVersions) {
+      const key = getInvoiceVersionKey(version);
+      if (!key) {
+        continue;
+      }
+
+      const versions = invoiceVersionsByKey.get(key) ?? [];
+      versions.push(version);
+      invoiceVersionsByKey.set(key, versions);
+    }
+
     return documents.map((document) => ({
       ...document,
       mappingStatus: getDocumentMappingStatus(document.lineItems),
+      versionHistory: (() => {
+        const key = getInvoiceVersionKey(document);
+
+        return key ? (invoiceVersionsByKey.get(key) ?? []) : [];
+      })(),
     }));
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021") {
@@ -92,6 +199,48 @@ export const getDashboardDocuments = cache(async () => {
   }
 });
 
+export const getOrphanedInvoiceVersionGroups = cache(async () => {
+  const versions = await prisma.document.findMany({
+    where: { documentTypeId: INVOICE_DOCUMENT_TYPE_ID },
+    orderBy: [{ revision: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      documentTypeId: true,
+      documentContour: true,
+      documentNumber: true,
+      documentDate: true,
+      supplierId: true,
+      sourceFileName: true,
+      revision: true,
+      isCurrent: true,
+      extractionStatus: true,
+      totalAmount: true,
+      currency: true,
+      supplier: { select: { name: true } },
+      recipient: { select: { name: true } },
+    },
+  });
+  const groups = new Map<string, (typeof versions)[number][]>();
+
+  for (const version of versions) {
+    const key = getInvoiceVersionKey(version);
+    if (!key) continue;
+
+    const group = groups.get(key) ?? [];
+    group.push(version);
+    groups.set(key, group);
+  }
+
+  return Array.from(groups.entries()).flatMap(([key, group]) => {
+    if (group.some((version) => version.isCurrent)) return [];
+
+    const selectableVersions = group.filter((version) =>
+      selectableInvoiceStatuses.includes(version.extractionStatus),
+    );
+    return selectableVersions.length > 0 ? [{ key, versions: selectableVersions }] : [];
+  });
+});
+
 export const getDashboardDocumentById = cache(async (documentId: number) => {
   try {
     return await prisma.document.findUnique({
@@ -99,6 +248,20 @@ export const getDashboardDocumentById = cache(async (documentId: number) => {
       include: {
         supplier: true,
         recipient: true,
+        invoiceCoverages: {
+          include: {
+            taxInvoiceDocument: {
+              select: { id: true, sourceFileName: true, documentNumber: true },
+            },
+          },
+        },
+        taxCoverages: {
+          include: {
+            invoiceDocument: {
+              select: { id: true, sourceFileName: true, documentNumber: true },
+            },
+          },
+        },
         lineItems: getDocumentDetailsLineItemsArgs(),
         uploadedBy: {
           select: {

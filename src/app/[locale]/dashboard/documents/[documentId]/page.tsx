@@ -118,6 +118,13 @@ export default async function DocumentDetailsPage({
     notFound();
   }
 
+  const documentTypeLabel =
+    document.documentTypeId === 1
+      ? common("documentTypes.taxInvoice")
+      : document.documentTypeId === 2
+        ? common("documentTypes.invoice")
+        : common("documentTypes.unknown");
+
   return (
     <div style={{ display: "grid", gap: 24 }}>
       <Card className="grid gap-5 rounded-[34px] p-6">
@@ -162,6 +169,33 @@ export default async function DocumentDetailsPage({
           <Card className="grid gap-2 rounded-[24px] p-5">
             <strong>{t("documentTitle")}</strong>
             <div className="muted">{document.sourceFileName}</div>
+            <div>{t("type", { value: documentTypeLabel })}</div>
+            <div className="muted">{t("revision", { value: document.revision })}</div>
+            {document.documentTypeId === 2 ? (
+              <div>{document.hasTaxInvoice ? t("taxCovered") : t("taxNotCovered")}</div>
+            ) : null}
+            {document.invoiceCoverages.length + document.taxCoverages.length > 0 ? (
+              <div className="grid gap-1 text-sm">
+                {document.invoiceCoverages.map((coverage) => (
+                  <span key={coverage.id}>
+                    {t("linkedTax", {
+                      value:
+                        coverage.taxInvoiceDocument.documentNumber ??
+                        coverage.taxInvoiceDocument.sourceFileName,
+                    })}
+                  </span>
+                ))}
+                {document.taxCoverages.map((coverage) => (
+                  <span key={coverage.id}>
+                    {t("linkedInvoice", {
+                      value:
+                        coverage.invoiceDocument.documentNumber ??
+                        coverage.invoiceDocument.sourceFileName,
+                    })}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </Card>
           <Card className="grid gap-2 rounded-[24px] p-5">
             <strong>{t("supplierTitle")}</strong>

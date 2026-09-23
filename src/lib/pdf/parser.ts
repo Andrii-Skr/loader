@@ -1,5 +1,6 @@
 export {
   canonicalizeIssueNumber,
+  detectAndParseDocument,
   detectAndParseInvoice,
   detectInvoiceParser,
   getInvoiceParserByContour,

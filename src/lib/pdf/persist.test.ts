@@ -248,6 +248,41 @@ describe("ingestVatInvoice", () => {
     expect(document.documentContour).toBe("RU");
     expect(document.parserVersion).toBe("vat-invoice-ru-v1");
   });
+
+  it("stores Ukrainian LLC counterparties without their legal-form prefix", async () => {
+    parserMocks.parse.mockReturnValue({
+      ...createParsedInvoice({ lineItems: [] }),
+      supplier: {
+        name: 'ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ЛАНДПРЕСС"',
+        taxId: "123456789012",
+        kpp: null,
+      },
+      recipient: {
+        name: 'Товаристо з обмеженою відповідальністю "Видавництво "Кузя"',
+        taxId: "210987654321",
+        kpp: null,
+      },
+    });
+
+    await ingestVatInvoice({
+      documentId: 601,
+      contour: "UA",
+      rawText: "raw text",
+    });
+
+    expect(prismaState.tx.supplier.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: { name: '"ЛАНДПРЕСС"', kpp: null },
+        create: expect.objectContaining({ name: '"ЛАНДПРЕСС"' }),
+      }),
+    );
+    expect(prismaState.tx.recipient.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: { name: '"Кузя"', kpp: null },
+        create: expect.objectContaining({ name: '"Кузя"' }),
+      }),
+    );
+  });
 });
 
 function createParsedInvoice({
