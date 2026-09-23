@@ -9,7 +9,7 @@ import type {
 
 const QUANTITY_DECIMAL_PLACES = 3;
 const MONEY_DECIMAL_PLACES = 2;
-const VOLYNSKA_DRUKARNIA_NAME = "ВОЛИНСЬКА ДРУКАРНЯ";
+const SUPPLIERS_WITH_THOUSAND_UNIT_PRICES = ["ВОЛИНСЬКА ДРУКАРНЯ", "ЛАНДПРЕСС"];
 
 const toNormalizedDecimal = (value: string, decimalPlaces: number) =>
   new Prisma.Decimal(value).toDecimalPlaces(decimalPlaces).toFixed(decimalPlaces);
@@ -24,9 +24,10 @@ export const normalizePdfRowForSupplier = ({
   row: ReconciliationSourceRow;
   supplierName: string | null;
 }): ReconciliationSourceRow => {
-  const isVolynskaDrukarnia = supplierName
-    ?.toLocaleUpperCase("uk-UA")
-    .includes(VOLYNSKA_DRUKARNIA_NAME);
+  const normalizedSupplierName = supplierName?.toLocaleUpperCase("uk-UA") ?? "";
+  const usesThousandUnitPrices = SUPPLIERS_WITH_THOUSAND_UNIT_PRICES.some((name) =>
+    normalizedSupplierName.includes(name),
+  );
   const baseAmount =
     row.unitPrice === null ? null : new Prisma.Decimal(row.quantity).times(row.unitPrice);
   const isCalculatedTotal = row.lineTotalAmount === null && baseAmount !== null;
@@ -37,7 +38,7 @@ export const normalizePdfRowForSupplier = ({
     ? { lineTotalAmount, isCalculatedTotal: true }
     : { lineTotalAmount };
 
-  if (!isVolynskaDrukarnia) {
+  if (!usesThousandUnitPrices) {
     return { ...row, ...totalAmountFields };
   }
 

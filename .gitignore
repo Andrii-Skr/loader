@@ -5,7 +5,10 @@ node_modules
 .env.local
 .env.docker
 coverage
+playwright-report
+test-results
 dist
+e2e
 *.tsbuildinfo
 storage/uploads
 src/generated/prisma

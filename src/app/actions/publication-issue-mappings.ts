@@ -439,19 +439,20 @@ export const savePublicationIssueMappingRegistry = async (
         };
       });
 
-      const issueMatchesWithDocument = canonicalIssueMatches.flatMap((issueMatch) => {
-        const documentId = issueMatch.documentId ?? parsedInput.documentId;
-
-        return documentId ? [{ ...issueMatch, documentId }] : [];
-      });
+      const issueMatchesWithDocument = canonicalIssueMatches.map((issueMatch) => ({
+        ...issueMatch,
+        documentId: issueMatch.documentId ?? parsedInput.documentId,
+      }));
       const preparedIssueMatches =
         issueMatchesWithDocument.length > 0
           ? await Promise.all(
               issueMatchesWithDocument.map(async (issueMatch) => {
                 const specialDocuments = await prisma.specialDocument.findMany({
                   where: {
-                    documentId: issueMatch.documentId,
                     publicationIssueId: issueMatch.publicationIssueId,
+                    ...(issueMatch.documentId
+                      ? { documentId: issueMatch.documentId }
+                      : { document: { isCurrent: true } }),
                   },
                   select: {
                     id: true,

@@ -101,14 +101,11 @@ export function PublicationIssueMappingsTableClient({
         }
 
         publicationSelections.set(selectionState.publicationId, publicationSelectionSet);
-        const issueMatchDocumentId = documentId ?? item.mappingDocumentId;
-        if (issueMatchDocumentId) {
-          issueMatches.push({
-            publicationIssueId: selectionState.publicationIssueId,
-            documentId: issueMatchDocumentId,
-            matchedIssue: selectionState.matchedIssue,
-          });
-        }
+        issueMatches.push({
+          publicationIssueId: selectionState.publicationIssueId,
+          documentId,
+          matchedIssue: selectionState.matchedIssue,
+        });
       }
 
       const result = await savePublicationIssueMappingRegistry({

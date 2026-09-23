@@ -199,48 +199,6 @@ export const getDashboardDocuments = cache(async () => {
   }
 });
 
-export const getOrphanedInvoiceVersionGroups = cache(async () => {
-  const versions = await prisma.document.findMany({
-    where: { documentTypeId: INVOICE_DOCUMENT_TYPE_ID },
-    orderBy: [{ revision: "desc" }, { id: "desc" }],
-    select: {
-      id: true,
-      documentTypeId: true,
-      documentContour: true,
-      documentNumber: true,
-      documentDate: true,
-      supplierId: true,
-      sourceFileName: true,
-      revision: true,
-      isCurrent: true,
-      extractionStatus: true,
-      totalAmount: true,
-      currency: true,
-      supplier: { select: { name: true } },
-      recipient: { select: { name: true } },
-    },
-  });
-  const groups = new Map<string, (typeof versions)[number][]>();
-
-  for (const version of versions) {
-    const key = getInvoiceVersionKey(version);
-    if (!key) continue;
-
-    const group = groups.get(key) ?? [];
-    group.push(version);
-    groups.set(key, group);
-  }
-
-  return Array.from(groups.entries()).flatMap(([key, group]) => {
-    if (group.some((version) => version.isCurrent)) return [];
-
-    const selectableVersions = group.filter((version) =>
-      selectableInvoiceStatuses.includes(version.extractionStatus),
-    );
-    return selectableVersions.length > 0 ? [{ key, versions: selectableVersions }] : [];
-  });
-});
-
 export const getDashboardDocumentById = cache(async (documentId: number) => {
   try {
     return await prisma.document.findUnique({

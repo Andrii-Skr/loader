@@ -125,6 +125,19 @@ describe("normalizePdfRowForSupplier", () => {
     });
   });
 
+  it("rescales Landpress quantities and prices without changing the total", () => {
+    expect(
+      normalizePdfRowForSupplier({
+        row: pdfRow,
+        supplierName: 'ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ЛАНДПРЕСС"',
+      }),
+    ).toMatchObject({
+      quantity: "100000",
+      unitPrice: "0.0125",
+      lineTotalAmount: "1250",
+    });
+  });
+
   it("does not change rows from other suppliers", () => {
     expect(
       normalizePdfRowForSupplier({

@@ -30,6 +30,18 @@ an existing `PostgreSQL` database.
 - Local runtime config is expected in `.env.local`.
 - Prisma CLI is configured via `prisma.config.ts` and generates the client into `src/generated/prisma`.
 
+## Browser E2E
+
+Install Chromium once with `pnpm exec playwright install chromium`, then run `pnpm test:e2e`.
+The test loads `.env.local` and uses `ADMIN_LOGIN`/`ADMIN_PASSWORD`; set
+`E2E_ADMIN_LOGIN`/`E2E_ADMIN_PASSWORD` to override them. It starts `pnpm dev` on port 3000
+when the app is not already running. `E2E_BASE_URL` overrides the URL.
+
+The mapping scenario uses the eight files under `e2e/1` and `e2e/2`. It stops before
+uploading if those documents already exist or required external catalogue candidates are
+missing. After a run, it removes the documents it uploaded and restores affected local
+mapping records. Run it without other users changing the same local records concurrently.
+
 ## Docker production deployment
 
 Docker runs only the application. PostgreSQL remains an external dependency and is never created by

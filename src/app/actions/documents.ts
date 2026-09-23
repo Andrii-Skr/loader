@@ -285,7 +285,6 @@ export const deleteDocument = async ({
           where: { id: parsedInput.documentId },
           select: {
             id: true,
-            sourceFilePath: true,
             documentTypeId: true,
           },
         });
@@ -294,13 +293,13 @@ export const deleteDocument = async ({
           return { errorKey: "notFound", success: false };
         }
 
-        await deleteDocumentWithCoverageRefresh({
+        const sourceFilePaths = await deleteDocumentWithCoverageRefresh({
           documentId: document.id,
           documentTypeId: document.documentTypeId,
         });
 
-        if (document.sourceFilePath) {
-          await deleteUploadedFile(document.sourceFilePath);
+        for (const sourceFilePath of sourceFilePaths) {
+          await deleteUploadedFile(sourceFilePath);
         }
 
         revalidatePath(`/${parsedInput.locale}/dashboard`);

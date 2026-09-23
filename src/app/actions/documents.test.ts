@@ -160,7 +160,7 @@ describe("uploadInvoice", () => {
     unlinkMock.mockResolvedValue(undefined);
     retireDocumentForNewVersionMock.mockResolvedValue([]);
     autoMatchTaxInvoiceMock.mockResolvedValue(undefined);
-    deleteDocumentWithCoverageRefreshMock.mockResolvedValue(undefined);
+    deleteDocumentWithCoverageRefreshMock.mockResolvedValue([]);
     rematchUncoveredTaxInvoicesForInvoiceMock.mockResolvedValue(undefined);
     copyDocumentIssueMappingsMock.mockResolvedValue(0);
     selectInvoiceDocumentVersionMock.mockResolvedValue({ taxInvoiceDocumentIds: [] });
@@ -796,5 +796,21 @@ describe("uploadInvoice", () => {
       documentId: 501,
       documentTypeId: 1,
     });
+  });
+
+  it("removes files for every deleted invoice version", async () => {
+    prismaState.documentFindUnique.mockResolvedValue({ id: 501, documentTypeId: 2 });
+    deleteDocumentWithCoverageRefreshMock.mockResolvedValue([
+      "/tmp/current.pdf",
+      "/tmp/previous.pdf",
+    ]);
+
+    await expect(deleteDocument({ documentId: 501, locale: "ru" })).resolves.toEqual({
+      errorKey: null,
+      success: true,
+    });
+
+    expect(unlinkMock).toHaveBeenCalledWith("/tmp/current.pdf");
+    expect(unlinkMock).toHaveBeenCalledWith("/tmp/previous.pdf");
   });
 });

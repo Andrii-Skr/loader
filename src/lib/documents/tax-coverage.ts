@@ -308,12 +308,49 @@ export const deleteDocumentWithCoverageRefresh = async ({
   documentId: number;
   documentTypeId: number;
 }) => {
-  const taxInvoiceIdsToRecheck = await prisma.$transaction(async (tx) => {
+  const { taxInvoiceIdsToRecheck, sourceFilePaths } = await prisma.$transaction(async (tx) => {
+    const document = await tx.document.findUnique({
+      where: { id: documentId },
+      select: {
+        id: true,
+        isCurrent: true,
+        documentContour: true,
+        documentNumber: true,
+        documentDate: true,
+        supplierId: true,
+        sourceFilePath: true,
+      },
+    });
+    if (!document) throw new Error("Document was not found.");
+
+    let documentsToDelete: Array<{ id: number; sourceFilePath: string | null }> = [document];
+    if (
+      documentTypeId === INVOICE_TYPE_ID &&
+      document.documentContour &&
+      document.documentNumber &&
+      document.documentDate &&
+      document.supplierId !== null
+    ) {
+      const versions = await tx.document.findMany({
+        where: {
+          documentTypeId: INVOICE_TYPE_ID,
+          documentContour: document.documentContour,
+          documentNumber: document.documentNumber,
+          documentDate: document.documentDate,
+          supplierId: document.supplierId,
+        },
+        select: { id: true, isCurrent: true, sourceFilePath: true },
+      });
+      if (document.isCurrent || !versions.some((version) => version.isCurrent)) {
+        documentsToDelete = versions;
+      }
+    }
+    const documentIds = documentsToDelete.map((version) => version.id);
     const coverages = await tx.documentTaxCoverage.findMany({
       where:
         documentTypeId === TAX_INVOICE_TYPE_ID
           ? { taxInvoiceDocumentId: documentId }
-          : { invoiceDocumentId: documentId },
+          : { invoiceDocumentId: { in: documentIds } },
       select: {
         invoiceDocumentId: true,
         taxInvoiceDocumentId: true,
@@ -321,13 +358,21 @@ export const deleteDocumentWithCoverageRefresh = async ({
       },
     });
 
-    await tx.document.delete({ where: { id: documentId } });
+    if (documentIds.length === 1) {
+      await tx.document.delete({ where: { id: documentId } });
+    } else {
+      await tx.document.deleteMany({ where: { id: { in: documentIds } } });
+    }
+
+    const sourceFilePaths = documentsToDelete.flatMap((version) =>
+      version.sourceFilePath ? [version.sourceFilePath] : [],
+    );
 
     if (documentTypeId === TAX_INVOICE_TYPE_ID) {
       for (const invoiceDocumentId of new Set(coverages.map((item) => item.invoiceDocumentId))) {
         await refreshInvoiceTaxFlag(tx, invoiceDocumentId);
       }
-      return [];
+      return { taxInvoiceIdsToRecheck: [], sourceFilePaths };
     }
 
     const currentTaxInvoiceIds = coverages
@@ -339,7 +384,7 @@ export const deleteDocumentWithCoverageRefresh = async ({
         data: { taxCoverageStatus: TaxCoverageStatus.NO_CANDIDATES },
       });
     }
-    return currentTaxInvoiceIds;
+    return { taxInvoiceIdsToRecheck: currentTaxInvoiceIds, sourceFilePaths };
   });
 
   for (const taxInvoiceDocumentId of taxInvoiceIdsToRecheck) {
@@ -349,6 +394,7 @@ export const deleteDocumentWithCoverageRefresh = async ({
       console.error("Could not rematch tax invoice after invoice deletion", error);
     }
   }
+  return sourceFilePaths;
 };
 
 export const retireDocumentForNewVersion = async ({

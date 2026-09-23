@@ -330,6 +330,69 @@ describe("saveDocumentLineAllocations", () => {
     );
   });
 
+  it("saves an issue across all current documents in the global registry", async () => {
+    specialDocumentFindManyMock.mockResolvedValue([
+      {
+        id: 20,
+        quantity: new Prisma.Decimal("10"),
+        unitPrice: new Prisma.Decimal("2"),
+        lineBaseAmount: new Prisma.Decimal("20"),
+        lineVatAmount: new Prisma.Decimal("4"),
+        lineTotalAmount: new Prisma.Decimal("24"),
+        document: { currency: "UAH" },
+        _count: { externalMatches: 0 },
+        externalMatches: [],
+      },
+      {
+        id: 21,
+        quantity: new Prisma.Decimal("5"),
+        unitPrice: new Prisma.Decimal("2"),
+        lineBaseAmount: new Prisma.Decimal("10"),
+        lineVatAmount: new Prisma.Decimal("2"),
+        lineTotalAmount: new Prisma.Decimal("12"),
+        document: { currency: "UAH" },
+        _count: { externalMatches: 0 },
+        externalMatches: [],
+      },
+    ]);
+
+    await expect(
+      savePublicationIssueMappingRegistry({
+        locale: "ru",
+        publicationSelections: [],
+        issueMatches: [
+          {
+            publicationIssueId: 4,
+            matchedIssue: {
+              externalEditionId: 1,
+              externalEditionName: "Edition 1",
+              externalIssueId: 101,
+              externalIssueNumber: "№101",
+            },
+          },
+        ],
+      }),
+    ).resolves.toEqual({ errorKey: null });
+
+    expect(specialDocumentFindManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          publicationIssueId: 4,
+          document: { isCurrent: true },
+        },
+      }),
+    );
+    expect(createManyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({ specialDocumentId: 20 }),
+          expect.objectContaining({ specialDocumentId: 21 }),
+        ]),
+      }),
+    );
+    expect(updateMock).toHaveBeenCalledTimes(2);
+  });
+
   it("confirms matching existing allocations during a document registry save", async () => {
     specialDocumentFindManyMock.mockResolvedValue([
       {

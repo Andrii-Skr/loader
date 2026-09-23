@@ -1,7 +1,14 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
   "files": {
-    "ignore": ["node_modules", ".next", "coverage", "src/generated/prisma"]
+    "ignore": [
+      "node_modules",
+      ".next",
+      "coverage",
+      "playwright-report",
+      "test-results",
+      "src/generated/prisma"
+    ]
   },
   "formatter": {
     "enabled": true,
