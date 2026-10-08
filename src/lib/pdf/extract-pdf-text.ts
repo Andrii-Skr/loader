@@ -53,7 +53,7 @@ export const extractPdfText = async (filePath: string): Promise<string> => {
       }
       return normalizedText;
     } finally {
-      await pdf.destroy();
+      await pdf.loadingTask.destroy();
     }
   } catch (error) {
     if (error instanceof PdfExtractionError) {
@@ -93,7 +93,7 @@ const extractPdfTextWithOcr = async (
           pages.set(pageNumber, pageText);
         }
       } finally {
-        await ocrPdf.destroy();
+        await ocrPdf.loadingTask.destroy();
       }
 
       return pages;

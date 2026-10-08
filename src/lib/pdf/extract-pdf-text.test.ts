@@ -25,8 +25,8 @@ import { extractPdfText } from "./extract-pdf-text";
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.getProxy
-    .mockResolvedValueOnce({ numPages: 3, destroy: mocks.destroy })
-    .mockResolvedValue({ numPages: 3, destroy: mocks.ocrDestroy });
+    .mockResolvedValueOnce({ numPages: 3, loadingTask: { destroy: mocks.destroy } })
+    .mockResolvedValue({ numPages: 3, loadingTask: { destroy: mocks.ocrDestroy } });
   mocks.extract.mockResolvedValue({ text: ["Header", "", "Footer"] });
   mocks.render.mockResolvedValue(new Uint8Array([1]));
   mocks.recognize.mockResolvedValue({ data: { text: "Scanned table" } });
@@ -40,7 +40,7 @@ it("OCRs only the scanned page and preserves the surrounding text in page order"
   expect(await extractPdfText("mixed.pdf")).toBe("Header\n\nScanned table\n\nFooter");
   expect(mocks.render).toHaveBeenCalledTimes(1);
   expect(mocks.render).toHaveBeenCalledWith(
-    expect.objectContaining({ destroy: mocks.ocrDestroy }),
+    expect.objectContaining({ loadingTask: { destroy: mocks.ocrDestroy } }),
     2,
     expect.any(Object),
   );
@@ -85,9 +85,9 @@ it("keeps bytes available for OCR after PDF.js transfers the first buffer", asyn
   mocks.getProxy
     .mockImplementationOnce(async (data: Uint8Array) => {
       structuredClone(data.buffer, { transfer: [data.buffer] });
-      return { numPages: 3, destroy: mocks.destroy };
+      return { numPages: 3, loadingTask: { destroy: mocks.destroy } };
     })
-    .mockResolvedValue({ numPages: 3, destroy: mocks.ocrDestroy });
+    .mockResolvedValue({ numPages: 3, loadingTask: { destroy: mocks.ocrDestroy } });
   expect(await extractPdfText("mixed.pdf")).toBe("Header\n\nScanned table\n\nFooter");
   expect(mocks.getProxy.mock.calls[1][0]).toEqual(new Uint8Array(Buffer.from("pdf")));
   expect(mocks.ocrDestroy).toHaveBeenCalledTimes(1);
