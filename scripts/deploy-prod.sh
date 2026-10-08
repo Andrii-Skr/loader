@@ -56,7 +56,7 @@ update_source() {
 
 deploy() {
   update_source
-  compose --profile migrate run --rm migrate
+  compose --profile migrate run --rm --build migrate
   compose up -d --build --wait app
   compose ps
 }
@@ -68,7 +68,7 @@ case "${1:-}" in
     ;;
   migrate)
     require_runtime
-    compose --profile migrate run --rm migrate
+    compose --profile migrate run --rm --build migrate
     ;;
   seed)
     require_runtime

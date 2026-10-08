@@ -6,11 +6,14 @@ import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { type AppLocale, routing } from "@/i18n/routing";
 import { prisma } from "@/lib/prisma";
+import { calculateAllocationAmounts } from "@/lib/publication-mappings/calculations";
 import {
   getExternalIssuePairsByIds,
   searchExternalEditions,
   searchExternalIssueNumbersByEdition,
 } from "@/lib/publication-mappings/external-repository";
+import { unitPriceSchema } from "@/lib/publication-mappings/price";
+import { quantitySchema } from "@/lib/publication-mappings/quantity";
 import { getPublicationIssueOccurrences } from "@/lib/publication-mappings/queries";
 import {
   applyPublicationMappingReplacements,
@@ -18,6 +21,7 @@ import {
   searchIssueNumberCandidates,
   searchPublicationCandidates,
 } from "@/lib/publication-mappings/service";
+import { runMappingTransaction } from "@/lib/publication-mappings/transaction";
 import type {
   DocumentExternalMatchDetailDto,
   DocumentIssueMatchDto,
@@ -64,8 +68,8 @@ const saveDocumentLineAllocationsSchema: z.ZodType<SaveDocumentLineAllocationsIn
           externalEditionName: z.string().min(1).max(260),
           externalIssueId: z.number().int().positive(),
           externalIssueNumber: z.string().min(1).max(160),
-          quantity: z.string().min(1).max(40),
-          unitPrice: z.string().min(1).max(40),
+          quantity: quantitySchema("invalidInput"),
+          unitPrice: unitPriceSchema("invalidInput"),
         }),
       ),
     }),
@@ -100,8 +104,8 @@ const saveRegistrySchema: z.ZodType<SavePublicationIssueMappingRegistryInput> = 
             externalEditionName: z.string().min(1).max(260),
             externalIssueId: z.number().int().positive().nullable(),
             externalIssueNumber: z.string().min(1).max(160).nullable(),
-            quantity: z.string().min(1).max(40),
-            unitPrice: z.string().min(1).max(40).nullable(),
+            quantity: quantitySchema("invalidInput"),
+            unitPrice: unitPriceSchema("invalidInput").nullable(),
             lineBaseAmount: z.string().min(1).max(40).nullable(),
             lineVatAmount: z.string().min(1).max(40).nullable(),
             lineTotalAmount: z.string().min(1).max(40).nullable(),
@@ -242,13 +246,6 @@ const validateDetailTotalsAgainstRow = ({
 
 const pickPrimaryDetail = (details: DocumentExternalMatchDetailDto[]) =>
   details.find((detail) => detail.isPrimary) ?? details[0] ?? null;
-
-const getVatRatePercent = (vatRate: string | null) => {
-  const match = vatRate?.replace(",", ".").match(/\d+(?:\.\d+)?/u);
-  return match ? new Prisma.Decimal(match[0]) : new Prisma.Decimal(0);
-};
-
-const toRoundedMoney = (value: Prisma.Decimal) => value.toDecimalPlaces(2);
 
 const externalIssuePairKey = ({
   externalEditionId,
@@ -443,149 +440,150 @@ export const savePublicationIssueMappingRegistry = async (
         ...issueMatch,
         documentId: issueMatch.documentId ?? parsedInput.documentId,
       }));
-      const preparedIssueMatches =
-        issueMatchesWithDocument.length > 0
-          ? await Promise.all(
-              issueMatchesWithDocument.map(async (issueMatch) => {
-                const specialDocuments = await prisma.specialDocument.findMany({
-                  where: {
-                    publicationIssueId: issueMatch.publicationIssueId,
-                    ...(issueMatch.documentId
-                      ? { documentId: issueMatch.documentId }
-                      : { document: { isCurrent: true } }),
-                  },
-                  select: {
-                    id: true,
-                    quantity: true,
-                    unitPrice: true,
-                    lineBaseAmount: true,
-                    lineVatAmount: true,
-                    lineTotalAmount: true,
-                    document: { select: { currency: true } },
-                    _count: { select: { externalMatches: true } },
-                    externalMatches: {
-                      orderBy: [{ isPrimary: "desc" }, { id: "asc" }],
-                      select: {
-                        externalEditionId: true,
-                        externalIssueId: true,
-                        externalIssueNumber: true,
-                        isPrimary: true,
+      const saved = await runMappingTransaction(async (tx) => {
+        const preparedIssueMatches =
+          issueMatchesWithDocument.length > 0
+            ? await Promise.all(
+                issueMatchesWithDocument.map(async (issueMatch) => {
+                  const specialDocuments = await tx.specialDocument.findMany({
+                    where: {
+                      publicationIssueId: issueMatch.publicationIssueId,
+                      ...(issueMatch.documentId
+                        ? { documentId: issueMatch.documentId }
+                        : { document: { isCurrent: true } }),
+                    },
+                    select: {
+                      id: true,
+                      quantity: true,
+                      unitPrice: true,
+                      lineBaseAmount: true,
+                      lineVatAmount: true,
+                      lineTotalAmount: true,
+                      document: { select: { currency: true } },
+                      _count: { select: { externalMatches: true } },
+                      externalMatches: {
+                        orderBy: [{ isPrimary: "desc" }, { id: "asc" }],
+                        select: {
+                          externalEditionId: true,
+                          externalIssueId: true,
+                          externalIssueNumber: true,
+                          isPrimary: true,
+                        },
                       },
                     },
-                  },
-                });
-                const providedDetails = issueMatch.matchDetails ?? [];
+                  });
+                  const providedDetails = issueMatch.matchDetails ?? [];
 
-                if (providedDetails.length > 0 && specialDocuments.length !== 1) {
-                  return { ok: false as const };
-                }
-
-                const detailPayloadByDocumentId = new Map<
-                  number,
-                  DocumentExternalMatchDetailDto[]
-                >();
-                const preservedDocumentMatches: Array<{
-                  specialDocumentId: number;
-                  externalEditionId: number;
-                  externalIssueId: number;
-                  externalIssueNumber: string;
-                  matchCount: number;
-                }> = [];
-
-                if (providedDetails.length > 0) {
-                  const targetRow = specialDocuments[0];
-
-                  if (
-                    !targetRow ||
-                    !validateDetailTotalsAgainstRow({ details: providedDetails, row: targetRow })
-                  ) {
+                  if (providedDetails.length > 0 && specialDocuments.length !== 1) {
                     return { ok: false as const };
                   }
 
-                  detailPayloadByDocumentId.set(targetRow.id, providedDetails);
-                } else if (issueMatch.matchedIssue) {
-                  for (const row of specialDocuments) {
-                    if (row._count.externalMatches > 0) {
-                      const primaryMatch = row.externalMatches[0];
+                  const detailPayloadByDocumentId = new Map<
+                    number,
+                    DocumentExternalMatchDetailDto[]
+                  >();
+                  const preservedDocumentMatches: Array<{
+                    specialDocumentId: number;
+                    externalEditionId: number;
+                    externalIssueId: number;
+                    externalIssueNumber: string;
+                    matchCount: number;
+                  }> = [];
 
-                      // A detailed allocation is authoritative and must not be overwritten by a
-                      // standard mapping save. If it already agrees with the selected issue, it is
-                      // nevertheless a valid confirmation for this document.
-                      if (
-                        primaryMatch?.externalEditionId ===
-                          issueMatch.matchedIssue.externalEditionId &&
-                        primaryMatch.externalIssueId === issueMatch.matchedIssue.externalIssueId &&
-                        primaryMatch.externalIssueNumber !== null
-                      ) {
-                        preservedDocumentMatches.push({
-                          specialDocumentId: row.id,
-                          externalEditionId: primaryMatch.externalEditionId,
-                          externalIssueId: primaryMatch.externalIssueId,
-                          externalIssueNumber: primaryMatch.externalIssueNumber,
-                          matchCount: row.externalMatches.length,
-                        });
-                      }
+                  if (providedDetails.length > 0) {
+                    const targetRow = specialDocuments[0];
 
-                      continue;
+                    if (
+                      !targetRow ||
+                      !validateDetailTotalsAgainstRow({ details: providedDetails, row: targetRow })
+                    ) {
+                      return { ok: false as const };
                     }
 
-                    detailPayloadByDocumentId.set(row.id, [
-                      buildSingleDetailFromRow({
-                        matchedIssue: issueMatch.matchedIssue,
-                        row: { ...row, currency: row.document.currency },
-                      }),
-                    ]);
+                    detailPayloadByDocumentId.set(targetRow.id, providedDetails);
+                  } else if (issueMatch.matchedIssue) {
+                    for (const row of specialDocuments) {
+                      if (row._count.externalMatches > 0) {
+                        const primaryMatch = row.externalMatches[0];
+
+                        // A detailed allocation is authoritative and must not be overwritten by a
+                        // standard mapping save. If it already agrees with the selected issue, it is
+                        // nevertheless a valid confirmation for this document.
+                        if (
+                          primaryMatch?.externalEditionId ===
+                            issueMatch.matchedIssue.externalEditionId &&
+                          primaryMatch.externalIssueId ===
+                            issueMatch.matchedIssue.externalIssueId &&
+                          primaryMatch.externalIssueNumber !== null
+                        ) {
+                          preservedDocumentMatches.push({
+                            specialDocumentId: row.id,
+                            externalEditionId: primaryMatch.externalEditionId,
+                            externalIssueId: primaryMatch.externalIssueId,
+                            externalIssueNumber: primaryMatch.externalIssueNumber,
+                            matchCount: row.externalMatches.length,
+                          });
+                        }
+
+                        continue;
+                      }
+
+                      detailPayloadByDocumentId.set(row.id, [
+                        buildSingleDetailFromRow({
+                          matchedIssue: issueMatch.matchedIssue,
+                          row: { ...row, currency: row.document.currency },
+                        }),
+                      ]);
+                    }
                   }
-                }
 
-                try {
-                  const writes = Array.from(detailPayloadByDocumentId.entries()).flatMap(
-                    ([specialDocumentId, details]) =>
-                      details.map((detail) => ({
-                        specialDocumentId,
-                        externalEditionId: detail.externalEditionId,
-                        externalEditionName: detail.externalEditionName,
-                        externalIssueId: detail.externalIssueId,
-                        externalIssueNumber: detail.externalIssueNumber,
-                        quantity: new Prisma.Decimal(detail.quantity),
-                        unitPrice: toDecimal(detail.unitPrice),
-                        lineBaseAmount: toDecimal(detail.lineBaseAmount),
-                        lineVatAmount: toDecimal(detail.lineVatAmount),
-                        lineTotalAmount: toDecimal(detail.lineTotalAmount),
-                        currency: detail.currency,
-                        isPrimary: detail.isPrimary,
-                      })),
-                  );
-                  return {
-                    ok: true as const,
-                    documentMatchSummaries: Array.from(detailPayloadByDocumentId.entries()).map(
-                      ([specialDocumentId, documentDetails]) => ({
-                        specialDocumentId,
-                        primaryDetail: pickPrimaryDetail(documentDetails),
-                        matchCount: documentDetails.length,
-                      }),
-                    ),
-                    specialDocumentIds:
-                      providedDetails.length > 0
-                        ? specialDocuments.map((row) => row.id)
-                        : specialDocuments
-                            .filter((row) => row._count.externalMatches === 0)
-                            .map((row) => row.id),
-                    preservedDocumentMatches,
-                    writes,
-                  };
-                } catch {
-                  return { ok: false as const };
-                }
-              }),
-            )
-          : [];
+                  try {
+                    const writes = Array.from(detailPayloadByDocumentId.entries()).flatMap(
+                      ([specialDocumentId, details]) =>
+                        details.map((detail) => ({
+                          specialDocumentId,
+                          externalEditionId: detail.externalEditionId,
+                          externalEditionName: detail.externalEditionName,
+                          externalIssueId: detail.externalIssueId,
+                          externalIssueNumber: detail.externalIssueNumber,
+                          quantity: new Prisma.Decimal(detail.quantity),
+                          unitPrice: toDecimal(detail.unitPrice),
+                          lineBaseAmount: toDecimal(detail.lineBaseAmount),
+                          lineVatAmount: toDecimal(detail.lineVatAmount),
+                          lineTotalAmount: toDecimal(detail.lineTotalAmount),
+                          currency: detail.currency,
+                          isPrimary: detail.isPrimary,
+                        })),
+                    );
+                    return {
+                      ok: true as const,
+                      documentMatchSummaries: Array.from(detailPayloadByDocumentId.entries()).map(
+                        ([specialDocumentId, documentDetails]) => ({
+                          specialDocumentId,
+                          primaryDetail: pickPrimaryDetail(documentDetails),
+                          matchCount: documentDetails.length,
+                        }),
+                      ),
+                      specialDocumentIds:
+                        providedDetails.length > 0
+                          ? specialDocuments.map((row) => row.id)
+                          : specialDocuments
+                              .filter((row) => row._count.externalMatches === 0)
+                              .map((row) => row.id),
+                      preservedDocumentMatches,
+                      writes,
+                    };
+                  } catch {
+                    return { ok: false as const };
+                  }
+                }),
+              )
+            : [];
 
-      if (preparedIssueMatches.some((result) => result.ok === false)) {
-        return { errorKey: "validationFailed" };
-      }
+        if (preparedIssueMatches.some((result) => result.ok === false)) {
+          return false;
+        }
 
-      await prisma.$transaction(async (tx) => {
         await applyPublicationMappingReplacements({
           replacements: preparedPublicationMappings,
           tx,
@@ -641,7 +639,9 @@ export const savePublicationIssueMappingRegistry = async (
             });
           }
         }
+        return true;
       });
+      if (!saved) return { errorKey: "validationFailed" };
 
       revalidatePath(`/${parsedInput.locale}/dashboard`, "layout");
       if (parsedInput.documentId) {
@@ -823,7 +823,6 @@ export const saveDocumentLineAllocations = async (
 
         const targetKeys = new Set<string>();
         let allocatedQuantity = new Prisma.Decimal(0);
-        const vatRate = getVatRatePercent(row.vatRate);
         const details = [];
 
         for (const [index, detail] of allocation.matchDetails.entries()) {
@@ -849,17 +848,20 @@ export const saveDocumentLineAllocations = async (
           }
           targetKeys.add(targetKey);
           allocatedQuantity = allocatedQuantity.plus(quantity);
-          const lineBaseAmount = toRoundedMoney(quantity.mul(unitPrice));
-          const lineVatAmount = toRoundedMoney(lineBaseAmount.mul(vatRate).div(100));
+          const amounts = calculateAllocationAmounts({
+            quantity: detail.quantity,
+            unitPrice: detail.unitPrice,
+            vatRate: row.vatRate,
+          });
           details.push({
             ...detail,
             externalEditionName: canonicalPair.externalEditionName,
             externalIssueNumber: canonicalPair.externalIssueNumber,
             quantity,
             unitPrice,
-            lineBaseAmount,
-            lineVatAmount,
-            lineTotalAmount: toRoundedMoney(lineBaseAmount.plus(lineVatAmount)),
+            lineBaseAmount: new Prisma.Decimal(amounts.lineBaseAmount),
+            lineVatAmount: new Prisma.Decimal(amounts.lineVatAmount),
+            lineTotalAmount: new Prisma.Decimal(amounts.lineTotalAmount),
             currency: row.document.currency,
             isPrimary: index === 0,
           });
@@ -871,7 +873,7 @@ export const saveDocumentLineAllocations = async (
         payloads.push({ specialDocumentId: allocation.specialDocumentId, details });
       }
 
-      await prisma.$transaction(async (tx) => {
+      await runMappingTransaction(async (tx) => {
         for (const payload of payloads) {
           const primary = payload.details[0];
           await tx.specialDocumentExternalMatch.deleteMany({

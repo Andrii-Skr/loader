@@ -1,3 +1,5 @@
+import { validateDocumentDate } from "@/lib/documents/date";
+import { needsInvoiceReview } from "@/lib/pdf/integrity";
 import { normalizeDashNull, normalizeMoney, normalizeSpaces } from "@/lib/pdf/shared";
 import type { ParsedLineItem, ParsedPublicationIssue, ParsedVatInvoice } from "@/lib/pdf/types";
 
@@ -30,7 +32,7 @@ const parseRuInvoiceDate = (value: string): string => {
     throw new Error(`Unsupported RU month: ${match[2]}`);
   }
 
-  return `${match[1].padStart(2, "0")}.${month}.${match[3]}`;
+  return validateDocumentDate(`${match[1].padStart(2, "0")}.${month}.${match[3]}`);
 };
 
 const extractTaxIdAndKpp = (
@@ -432,6 +434,6 @@ export const parseVatInvoiceRuV1 = (rawText: string): ParsedVatInvoice => {
     baseAmount: totals.baseAmount,
     lineItems,
     rawText,
-    reviewRequired: lineItems.length === 0,
+    reviewRequired: needsInvoiceReview({ lineItems, ...totals }),
   };
 };

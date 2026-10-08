@@ -157,14 +157,22 @@ export const copyDocumentIssueMappings = async ({
 
     if (
       line.publicationIssueId === null ||
-      ambiguousPublicationIssueIds.has(line.publicationIssueId) ||
+      ambiguousPublicationIssueIds.has(line.publicationIssueId)
+    ) {
+      continue;
+    }
+
+    if (
       // A split allocation cannot safely follow a revised invoice: its quantities and amounts
       // may have changed. Preserve only an unambiguous one-to-one issue selection.
       line._count.externalMatches !== 1 ||
       line.externalMatches.length !== 1 ||
-      match?.externalIssueId === null ||
+      !match ||
+      match.externalIssueId === null ||
       match.externalIssueNumber === null
     ) {
+      matchesByPublicationIssueId.delete(line.publicationIssueId);
+      ambiguousPublicationIssueIds.add(line.publicationIssueId);
       continue;
     }
 

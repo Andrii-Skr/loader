@@ -1,3 +1,5 @@
+import { validateDocumentDate } from "@/lib/documents/date";
+import { needsInvoiceReview } from "@/lib/pdf/integrity";
 // The package entry point selects the ESM build in Turbopack. That build
 // decodes legacy CP1251 XLS strings incorrectly, so use SheetJS' Node/CJS
 // build explicitly for server-side invoice parsing.
@@ -67,7 +69,7 @@ const parseUaDate = (value: string): string => {
     throw new InvoiceDocumentParseError("Field not found: documentDate");
   }
 
-  return `${match[1].padStart(2, "0")}.${month}.${match[3]}`;
+  return validateDocumentDate(`${match[1].padStart(2, "0")}.${month}.${match[3]}`);
 };
 
 const findTaxId = (value: string): string | null =>
@@ -244,7 +246,10 @@ export const parseUaInvoiceDocument = (rawText: string): ParsedVatInvoice => {
     baseAmount,
     lineItems,
     rawText,
-    reviewRequired: lineItems.length === 0,
+    reviewRequired: needsInvoiceReview(
+      { lineItems, totalAmount, vatAmount, baseAmount },
+      { lineVatAvailable: false },
+    ),
   };
 };
 
@@ -320,7 +325,10 @@ export const parseLandpressXls = (buffer: Buffer): ParsedVatInvoice => {
     baseAmount,
     lineItems,
     rawText: text,
-    reviewRequired: lineItems.length === 0,
+    reviewRequired: needsInvoiceReview(
+      { lineItems, totalAmount, vatAmount, baseAmount },
+      { lineVatAvailable: false },
+    ),
   };
 };
 

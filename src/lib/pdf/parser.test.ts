@@ -110,6 +110,17 @@ describe("invoice parser registry", () => {
 });
 
 describe("parseUaInvoiceDocument", () => {
+  it("preserves the calendar error when detecting a regular invoice", () => {
+    const text = `Рахунок № 1 від 31 квітня 2026 р.
+Постачальник: ТОВ Альфа
+Покупець: ТОВ Бета
+№ Найменування робіт, послуг
+1 Друк журналу №1 1 шт 10,00 10,00
+Всього: 10,00
+Всього з ПДВ: 12,00
+Сума податку на додану вартість: 2,00`;
+    expect(() => detectAndParseDocument(text)).toThrow("invalidDocumentDate");
+  });
   it("extracts act counterparties and tax IDs from their requisites", () => {
     const parsed = parseUaInvoiceDocument(`АКТ надання послуг № 153 від 30 квітня 2026 р.
 Ми, що нижче підписалися, представник Замовника ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ВИДАВНИЦТВО "КУЗЯ" Директор Босенко Едуард Васильович, з одного боку, і представник Виконавця ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ПОЛІПРІНТ" БУРАКОВ Андрій Валентинович, ген.директор, з іншого боку.
@@ -135,6 +146,11 @@ describe("parseUaInvoiceDocument", () => {
 });
 
 describe("parseVatInvoiceRuV1", () => {
+  it("rejects an impossible Russian invoice date", () => {
+    expect(() =>
+      parseVatInvoiceRuV1(sampleRuText.replace("24 апреля 2026", "31 апреля 2026")),
+    ).toThrow("invalidDocumentDate");
+  });
   it("extracts header and line items", () => {
     const parsed = parseVatInvoiceRuV1(sampleRuText);
 
@@ -352,6 +368,19 @@ describe("parseVatInvoiceRuV1", () => {
 });
 
 describe("parseVatInvoiceUaV1", () => {
+  it("requires review when OCR damages one of two table rows", () => {
+    const start = sampleText.lastIndexOf("шт 2009 3150 5,00");
+    const corrupted = sampleText.slice(0, start) + sampleText.slice(start).replace("3150", "3I50");
+    const parsed = parseVatInvoiceUaV1(corrupted);
+    expect(parsed.lineItems).toHaveLength(1);
+    expect(parsed.reviewRequired).toBe(true);
+    expect(parseVatInvoiceUaV1(sampleText).reviewRequired).toBe(false);
+  });
+  it("rejects an impossible date", () => {
+    expect(() =>
+      parseVatInvoiceUaV1(sampleText.replace("1 0 0 4 2 0 2 6", "3 1 0 2 2 0 2 6")),
+    ).toThrow("invalidDocumentDate");
+  });
   it("extracts header and line items", () => {
     const parsed = parseVatInvoiceUaV1(sampleText);
 

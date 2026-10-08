@@ -258,6 +258,7 @@
       "replacementDetails": "Replacement chain: {replacements}.",
       "replacementEntry": "{previous} (revision {previousRevision}) → {current} (revision {currentRevision})",
       "parseFailedPrefix": "Parsing error",
+      "invalidDocumentDate": "The document contains an invalid calendar date.",
       "pdfReadFailed": "Could not read text from the PDF",
       "pdfHasNoTextLayer": "PDF does not contain a readable text layer. OCR is required.",
       "pdfOcrFailed": "OCR fallback failed",
@@ -340,6 +341,9 @@
       "forbidden": "Only admins can manage mappings.",
       "invalidInput": "Invalid request.",
       "validationFailed": "Check that every allocation has a unique target, valid quantity and price, and that its quantities equal the PDF row.",
+      "incompleteAllocation": "Choose a publication and issue for every allocation, or remove the unfinished row.",
+      "pricePrecision": "Enter a non-negative price with at most two decimal places and 13 digits before the decimal point.",
+      "quantityPrecision": "Enter a quantity with at most three decimal places and 12 digits before the decimal point.",
       "saved": "Mappings saved."
     }
   }

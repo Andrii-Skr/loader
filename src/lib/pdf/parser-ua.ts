@@ -1,4 +1,5 @@
 import { normalizePartyName } from "@/lib/documents/party-name";
+import { needsInvoiceReview } from "@/lib/pdf/integrity";
 import {
   capture,
   digitsToDate,
@@ -402,6 +403,14 @@ export const parseVatInvoiceUaV1 = (rawText: string): ParsedVatInvoice => {
     baseAmount: baseAmount ? normalizeMoney(baseAmount) : null,
     lineItems,
     rawText,
-    reviewRequired: lineItems.length === 0,
+    reviewRequired: needsInvoiceReview(
+      {
+        lineItems,
+        totalAmount: normalizeMoney(totalAmount),
+        vatAmount: vatAmount ? normalizeMoney(vatAmount) : null,
+        baseAmount: baseAmount ? normalizeMoney(baseAmount) : null,
+      },
+      { baseAmountIsSubtotal: true },
+    ),
   };
 };

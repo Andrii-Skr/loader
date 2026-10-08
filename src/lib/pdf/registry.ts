@@ -1,3 +1,4 @@
+import { InvalidDocumentDateError } from "@/lib/documents/date";
 import { parseUaInvoiceDocument } from "@/lib/pdf/invoice-document-parser";
 import {
   detectVatInvoiceRuV1,
@@ -141,6 +142,7 @@ export const detectAndParseDocument = (rawText: string): DetectedDocument => {
       lookupLocale: "uk-UA",
     };
   } catch (error) {
+    if (error instanceof InvalidDocumentDateError) throw error;
     if (invoiceDetectionError) {
       throw invoiceDetectionError;
     }

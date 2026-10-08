@@ -1,3 +1,4 @@
+import { validateDocumentDate } from "@/lib/documents/date";
 import type { ParsedLineItem } from "@/lib/pdf/types";
 
 export const normalizeSpaces = (value: string): string => value.replace(/\s+/g, " ").trim();
@@ -30,7 +31,7 @@ export const digitsToDate = (value: string): string => {
     throw new Error(`Invalid date token: ${value}`);
   }
 
-  return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4, 8)}`;
+  return validateDocumentDate(`${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4, 8)}`);
 };
 
 export const capture = (text: string, pattern: RegExp, fieldName: string): string => {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DocumentStatus } from "@/generated/prisma/client";
+import { DocumentStatus, Prisma } from "@/generated/prisma/client";
 
 const parserMocks = vi.hoisted(() => ({
   parse: vi.fn(),
@@ -32,6 +32,33 @@ vi.mock("@/lib/prisma", () => ({
 import { ingestVatInvoice } from "@/lib/pdf/persist";
 
 describe("ingestVatInvoice", () => {
+  it("stores a partially extracted table as NEEDS_REVIEW even if the parser misses the flag", async () => {
+    parserMocks.parse.mockReturnValue({
+      ...createParsedInvoice({ lineItems: [createLineItem('ж-л "Філворди" №4')] }),
+      baseAmount: "20.00",
+      vatAmount: "4.00",
+      totalAmount: "24.00",
+      reviewRequired: false,
+    });
+    parserMocks.parsePublicationIssueDescription.mockReturnValue({
+      publicationName: "Філворди",
+      rawIssueNumber: "4",
+      canonicalIssueNumber: "04-26",
+    });
+    const document = await ingestVatInvoice({ documentId: 101, contour: "UA", rawText: "raw" });
+    expect(document.reviewRequired).toBe(true);
+    expect(document.extractionStatus).toBe(DocumentStatus.NEEDS_REVIEW);
+  });
+  it("rejects an invalid calendar date before writing any document data", async () => {
+    parserMocks.parse.mockReturnValue({
+      ...createParsedInvoice({ lineItems: [] }),
+      documentDate: "31.02.2026",
+    });
+    await expect(
+      ingestVatInvoice({ documentId: 101, contour: "UA", rawText: "raw" }),
+    ).rejects.toThrow("invalidDocumentDate");
+    expect(prismaState.tx.document.update).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     parserMocks.parse.mockReset();
     parserMocks.parsePublicationIssueDescription.mockReset();
@@ -314,9 +341,18 @@ function createParsedInvoice({
       taxId: recipientTaxId,
       kpp: recipientKpp,
     },
-    totalAmount: "100.00",
-    vatAmount: "20.00",
-    baseAmount: "80.00",
+    totalAmount: new Prisma.Decimal(
+      lineItems.reduce(
+        (sum, line) => sum + Number(line.lineBaseAmount) + Number(line.lineVatAmount),
+        0,
+      ),
+    ).toFixed(2),
+    vatAmount: new Prisma.Decimal(
+      lineItems.reduce((sum, line) => sum + Number(line.lineVatAmount), 0),
+    ).toFixed(2),
+    baseAmount: new Prisma.Decimal(
+      lineItems.reduce((sum, line) => sum + Number(line.lineBaseAmount), 0),
+    ).toFixed(2),
     lineItems,
     rawText: "raw text",
     reviewRequired: false,

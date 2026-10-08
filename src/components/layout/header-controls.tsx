@@ -63,7 +63,9 @@ export function HeaderControls({
                   }
 
                   startTransition(() => {
-                    router.replace(pathname, { locale });
+                    router.replace(`${pathname}${window.location.search}${window.location.hash}`, {
+                      locale,
+                    });
                   });
                 }}
                 type="button"

@@ -118,6 +118,7 @@ export const getMonthlyReconciliationReport = cache(async (monthKey: string) => 
   const [documents, externalReceipt] = await Promise.all([
     prisma.document.findMany({
       where: {
+        isCurrent: true,
         documentDate: {
           gte: month.start,
           lt: month.end,

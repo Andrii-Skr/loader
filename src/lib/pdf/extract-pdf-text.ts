@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 
 import { PSM, createWorker } from "tesseract.js";
-import { definePDFJSModule, extractText, getDocumentProxy, renderPageAsImage } from "unpdf";
+import {
+  createIsomorphicCanvasFactory,
+  definePDFJSModule,
+  extractText,
+  getDocumentProxy,
+  renderPageAsImage,
+} from "unpdf";
 
 export class PdfExtractionError extends Error {
   constructor(
@@ -31,21 +37,24 @@ export const extractPdfText = async (filePath: string): Promise<string> => {
 
     const buffer = await readFile(filePath);
     const binary = new Uint8Array(buffer);
-    const pdf = await getDocumentProxy(binary);
-    const { text } = await extractText(pdf, { mergePages: true });
-    const normalizedText = text.replace(/\r/g, "").trim();
-
-    if (!normalizedText) {
-      const ocrText = await extractPdfTextWithOcr(binary, pdf.numPages);
-
-      if (!ocrText) {
+    // PDF.js transfers this buffer to its worker; keep the original bytes available for OCR.
+    const pdf = await getDocumentProxy(binary.slice());
+    try {
+      const { text } = await extractText(pdf, { mergePages: false });
+      const pages = text.map((page) => page.replace(/\r/g, "").trim());
+      const scannedPages = pages.flatMap((page, index) => (page ? [] : [index + 1]));
+      if (scannedPages.length > 0) {
+        const ocrPages = await extractPdfTextWithOcr(binary, scannedPages);
+        for (const [pageNumber, pageText] of ocrPages) pages[pageNumber - 1] = pageText;
+      }
+      const normalizedText = pages.join("\n\n").trim();
+      if (!normalizedText) {
         throw new PdfExtractionError("pdfHasNoTextLayer", "PDF text layer is empty.");
       }
-
-      return ocrText;
+      return normalizedText;
+    } finally {
+      await pdf.destroy();
     }
-
-    return normalizedText;
   } catch (error) {
     if (error instanceof PdfExtractionError) {
       throw error;
@@ -59,7 +68,10 @@ export const extractPdfText = async (filePath: string): Promise<string> => {
   }
 };
 
-const extractPdfTextWithOcr = async (binary: Uint8Array, totalPages: number): Promise<string> => {
+const extractPdfTextWithOcr = async (
+  binary: Uint8Array,
+  pageNumbers: number[],
+): Promise<Map<number, string>> => {
   try {
     const worker = await createWorker(["ukr", "rus", "eng"]);
 
@@ -69,22 +81,22 @@ const extractPdfTextWithOcr = async (binary: Uint8Array, totalPages: number): Pr
         preserve_interword_spaces: "1",
       });
 
-      const pages: string[] = [];
-
-      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
-        const image = await renderPageAsImage(binary, pageNumber, {
-          scale: 2,
-          canvasImport: () => import("@napi-rs/canvas"),
-        });
-        const result = await worker.recognize(Buffer.from(image));
-        const pageText = result.data.text.replace(/\r/g, "").trim();
-
-        if (pageText) {
-          pages.push(pageText);
+      const pages = new Map<number, string>();
+      const canvasImport = () => import("@napi-rs/canvas");
+      const CanvasFactory = await createIsomorphicCanvasFactory(canvasImport);
+      const ocrPdf = await getDocumentProxy(binary.slice(), { CanvasFactory });
+      try {
+        for (const pageNumber of pageNumbers) {
+          const image = await renderPageAsImage(ocrPdf, pageNumber, { scale: 2, canvasImport });
+          const result = await worker.recognize(Buffer.from(image));
+          const pageText = result.data.text.replace(/\r/g, "").trim();
+          pages.set(pageNumber, pageText);
         }
+      } finally {
+        await ocrPdf.destroy();
       }
 
-      return pages.join("\n\n").trim();
+      return pages;
     } finally {
       await worker.terminate();
     }

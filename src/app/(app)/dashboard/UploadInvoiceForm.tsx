@@ -31,12 +31,11 @@ import {
 } from "@/components/ui/form";
 import { useRouter } from "@/i18n/navigation";
 import { normalizePartyName } from "@/lib/documents/party-name";
+import { uploadDocumentBatch } from "@/lib/documents/upload-batch";
 
 type UploadDocumentValues = {
   document: File[];
 };
-
-type UploadActionResult = Awaited<ReturnType<typeof uploadDocuments>>;
 
 const parseVersionDate = (value: string) => {
   const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -55,15 +54,6 @@ const parseVersionDate = (value: string) => {
 
   return Number.isNaN(date.getTime()) ? null : date;
 };
-
-const combineUploadResults = (results: UploadActionResult[]): UploadActionResult => ({
-  errorKey: results.find((result) => result.errorKey)?.errorKey ?? null,
-  successCount: results.reduce((total, result) => total + result.successCount, 0),
-  failedCount: results.reduce((total, result) => total + result.failedCount, 0),
-  duplicateCount: results.reduce((total, result) => total + result.duplicateCount, 0),
-  replacementCount: results.reduce((total, result) => total + result.replacementCount, 0),
-  results: results.flatMap((result) => result.results),
-});
 
 export function UploadDocumentForm() {
   const router = useRouter();
@@ -99,6 +89,7 @@ export function UploadDocumentForm() {
     );
 
     if (supportedFiles.length === 0) {
+      setSelectedFiles([]);
       setResult({ error: t("messages.missingPdf"), success: null });
       form.setValue("document", [], { shouldValidate: true });
       return;
@@ -110,13 +101,7 @@ export function UploadDocumentForm() {
   };
 
   const formatActionResult = (actionResult: Awaited<ReturnType<typeof uploadDocuments>>) => {
-    if (actionResult.errorKey) {
-      return {
-        error: t(`messages.${actionResult.errorKey}`),
-        success: null,
-      };
-    }
-
+    const globalError = actionResult.errorKey ? t(`messages.${actionResult.errorKey}`) : null;
     const failedItems = actionResult.results.filter((item) => item.errorKey);
     const summary = t("messages.batchSummary", {
       success: actionResult.successCount,
@@ -138,10 +123,13 @@ export function UploadDocumentForm() {
       replacementEntries.length > 0
         ? t("messages.replacementDetails", { replacements: replacementEntries.join(", ") })
         : null;
-    const successMessage = [summary, replacementDetails].filter(Boolean).join(" ");
+    const successMessage =
+      actionResult.results.length > 0
+        ? [summary, replacementDetails].filter(Boolean).join(" ")
+        : null;
 
     if (failedItems.length === 0) {
-      return { error: null, success: successMessage };
+      return { error: globalError, success: successMessage };
     }
 
     const details = failedItems
@@ -173,7 +161,7 @@ export function UploadDocumentForm() {
       .join("\n");
 
     return {
-      error: details,
+      error: [globalError, details].filter(Boolean).join("\n") || null,
       success: successMessage,
     };
   };
@@ -187,43 +175,27 @@ export function UploadDocumentForm() {
     }
 
     startTransition(async () => {
-      const actionResults: UploadActionResult[] = [];
-
-      for (const file of files) {
-        const formData = new FormData();
-        formData.append("document", file);
-
-        try {
-          const actionResult = await uploadDocuments(formData);
-          actionResults.push(actionResult);
-
-          if (actionResult.errorKey) {
-            break;
-          }
-        } catch {
-          setResult({ error: t("messages.requestFailed"), success: null });
-          return;
-        }
-      }
-
-      const actionResult = combineUploadResults(actionResults);
-      setResult(formatActionResult(actionResult));
+      const { actionResult, requestFailedFile, remainingFiles } = await uploadDocumentBatch(
+        files,
+        uploadDocuments,
+      );
+      const formatted = formatActionResult(actionResult);
+      const requestError = requestFailedFile
+        ? `${requestFailedFile}: ${t("messages.requestFailed")}`
+        : null;
+      setResult({
+        error: [formatted.error, requestError].filter(Boolean).join("\n") || null,
+        success: formatted.success,
+      });
       const pendingSelections = actionResult.results.flatMap((item) =>
         item.versionSelection ? [item.versionSelection] : [],
       );
-
-      if (!actionResult.errorKey) {
-        setSelectedFiles([]);
-        form.reset();
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-        if (pendingSelections.length > 0) {
-          setVersionSelections(pendingSelections);
-          return;
-        }
-        router.refresh();
-      }
+      if (pendingSelections.length > 0) setVersionSelections(pendingSelections);
+      setSelectedFiles(remainingFiles);
+      if (remainingFiles.length === 0) form.reset();
+      else form.setValue("document", remainingFiles);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (actionResult.results.length > 0) router.refresh();
     });
   };
 

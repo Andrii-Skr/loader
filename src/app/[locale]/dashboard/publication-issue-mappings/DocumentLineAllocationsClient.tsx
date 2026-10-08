@@ -16,17 +16,14 @@ import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { useRouter } from "@/i18n/navigation";
 import type { AppLocale } from "@/i18n/routing";
+import {
+  type AllocationDraft,
+  allocationDraftsSchema,
+  getExcludedAllocationIssueIds,
+} from "@/lib/publication-mappings/allocation-drafts";
+import { summarizeAllocationDrafts } from "@/lib/publication-mappings/calculations";
+import { formatUnitPrice } from "@/lib/publication-mappings/price";
 import type { DocumentLineAllocationDto } from "@/lib/publication-mappings/types";
-
-type AllocationDraft = {
-  rowId: string;
-  externalEditionId: number | null;
-  externalEditionName: string;
-  externalIssueId: number | null;
-  externalIssueNumber: string;
-  quantity: string;
-  unitPrice: string;
-};
 
 const toInitialDrafts = (line: DocumentLineAllocationDto): AllocationDraft[] => {
   if (line.allocations.length > 0) {
@@ -42,7 +39,7 @@ const toInitialDrafts = (line: DocumentLineAllocationDto): AllocationDraft[] => 
           externalIssueId: allocation.externalIssueId,
           externalIssueNumber: allocation.externalIssueNumber,
           quantity: allocation.quantity,
-          unitPrice: allocation.unitPrice ?? line.unitPrice,
+          unitPrice: formatUnitPrice(allocation.unitPrice ?? line.unitPrice),
         },
       ];
     });
@@ -58,18 +55,8 @@ const createDraft = (line: DocumentLineAllocationDto, index: number): Allocation
   externalIssueId: null,
   externalIssueNumber: "",
   quantity: line.quantity,
-  unitPrice: line.unitPrice,
+  unitPrice: formatUnitPrice(line.unitPrice),
 });
-
-const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-
-const getLineTotal = (line: DocumentLineAllocationDto) =>
-  Number(line.lineTotalAmount ?? Number(line.lineBaseAmount) + Number(line.lineVatAmount));
-
-const getVatRatePercent = (vatRate: string | null) => {
-  const match = vatRate?.replace(",", ".").match(/\d+(?:\.\d+)?/u);
-  return match ? Number(match[0]) : 0;
-};
 
 export function DocumentLineAllocationsClient({
   documentId,
@@ -130,30 +117,35 @@ export function DocumentLineAllocationsClient({
   };
 
   const handleSave = () => {
+    const parsed = allocationDraftsSchema(
+      t("messages.incompleteAllocation"),
+      t("messages.pricePrecision"),
+      t("messages.quantityPrecision"),
+    ).safeParse(
+      lines.map((line) => ({
+        specialDocumentId: line.specialDocumentId,
+        drafts: draftsByLineId[line.specialDocumentId] ?? [],
+      })),
+    );
+    if (!parsed.success) {
+      setMessage({
+        error: parsed.error.issues.some((issue) => issue.path.at(-1) === "unitPrice")
+          ? t("messages.pricePrecision")
+          : parsed.error.issues.some((issue) => issue.path.at(-1) === "quantity")
+            ? t("messages.quantityPrecision")
+            : t("messages.incompleteAllocation"),
+        success: null,
+      });
+      return;
+    }
+
     startSavingTransition(async () => {
       setMessage({ error: null, success: null });
-      const allocations = lines.flatMap((line) => {
-        const drafts = draftsByLineId[line.specialDocumentId] ?? [];
-        const completeDrafts = drafts.filter(
-          (draft) => draft.externalEditionId !== null && draft.externalIssueId !== null,
-        );
-
-        return [
-          {
-            specialDocumentId: line.specialDocumentId,
-            matchDetails: completeDrafts.map((draft) => ({
-              externalEditionId: draft.externalEditionId as number,
-              externalEditionName: draft.externalEditionName,
-              externalIssueId: draft.externalIssueId as number,
-              externalIssueNumber: draft.externalIssueNumber,
-              quantity: draft.quantity,
-              unitPrice: draft.unitPrice,
-            })),
-          },
-        ];
+      const result = await saveDocumentLineAllocations({
+        documentId,
+        locale,
+        allocations: parsed.data,
       });
-
-      const result = await saveDocumentLineAllocations({ documentId, locale, allocations });
       if (result.errorKey) {
         setMessage({ error: t(`messages.${result.errorKey}`), success: null });
         return;
@@ -211,33 +203,15 @@ function DocumentLineAllocationEditor({
 }) {
   const t = useTranslations("PublicationMappings");
   const [searchError, setSearchError] = useState<string | null>(null);
-  const allocatedQuantity = useMemo(
-    () => drafts.reduce((sum, draft) => sum + (Number(draft.quantity) || 0), 0),
-    [drafts],
-  );
-  const allocatedTotal = useMemo(
+  const summary = useMemo(
     () =>
-      drafts.reduce((sum, draft) => {
-        const base = (Number(draft.quantity) || 0) * (Number(draft.unitPrice) || 0);
-        const vatRate = getVatRatePercent(line.vatRate);
-        return sum + roundMoney(base + (base * vatRate) / 100);
-      }, 0),
-    [drafts, line.vatRate],
+      summarizeAllocationDrafts(drafts, line.vatRate, {
+        lineBaseAmount: line.lineBaseAmount,
+        lineVatAmount: line.lineVatAmount,
+        lineTotalAmount: line.lineTotalAmount,
+      }),
+    [drafts, line.vatRate, line.lineBaseAmount, line.lineVatAmount, line.lineTotalAmount],
   );
-  const hasMoneyWarning = Math.abs(allocatedTotal - getLineTotal(line)) > 0.009;
-
-  const excludedEditionIds = (rowId: string) =>
-    new Set(
-      drafts.flatMap((draft) =>
-        draft.rowId === rowId || draft.externalEditionId === null ? [] : [draft.externalEditionId],
-      ),
-    );
-  const excludedIssueIds = (rowId: string) =>
-    new Set(
-      drafts.flatMap((draft) =>
-        draft.rowId === rowId || draft.externalIssueId === null ? [] : [draft.externalIssueId],
-      ),
-    );
 
   return (
     <section className="grid gap-4 rounded-[24px] border border-[color:var(--line)] bg-[color:var(--panel)] p-5">
@@ -245,7 +219,9 @@ function DocumentLineAllocationEditor({
         <strong>{`${line.lineNo}. ${line.description}`}</strong>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-[color:var(--ink-soft)]">
           <span>{t("sourceQuantity", { quantity: line.quantity })}</span>
-          <span>{t("sourcePrice", { price: line.unitPrice, currency: line.currency })}</span>
+          <span>
+            {t("sourcePrice", { price: formatUnitPrice(line.unitPrice), currency: line.currency })}
+          </span>
         </div>
       </div>
 
@@ -258,7 +234,6 @@ function DocumentLineAllocationEditor({
             <label className="grid gap-1 text-xs text-[color:var(--ink-soft)]">
               {t("allocationPublication")}
               <Combobox
-                excludedValues={excludedEditionIds(draft.rowId)}
                 initialOptions={
                   draft.externalEditionId
                     ? [{ value: draft.externalEditionId, label: draft.externalEditionName }]
@@ -308,7 +283,11 @@ function DocumentLineAllocationEditor({
               {t("allocationIssue")}
               <Combobox
                 disabled={draft.externalEditionId === null}
-                excludedValues={excludedIssueIds(draft.rowId)}
+                excludedValues={getExcludedAllocationIssueIds(
+                  drafts,
+                  draft.rowId,
+                  draft.externalEditionId,
+                )}
                 initialOptions={
                   draft.externalIssueId
                     ? [{ value: draft.externalIssueId, label: draft.externalIssueNumber }]
@@ -375,6 +354,12 @@ function DocumentLineAllocationEditor({
               {t("allocationPrice")}
               <Input
                 min="0"
+                onBlur={() =>
+                  onUpdate(draft.rowId, (current) => ({
+                    ...current,
+                    unitPrice: formatUnitPrice(current.unitPrice),
+                  }))
+                }
                 onChange={(event) =>
                   onUpdate(draft.rowId, (current) => ({
                     ...current,
@@ -403,12 +388,10 @@ function DocumentLineAllocationEditor({
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <div className="grid gap-1">
           <span>
-            {t("allocationQuantityTotal", { allocated: allocatedQuantity, source: line.quantity })}
+            {t("allocationQuantityTotal", { allocated: summary.quantity, source: line.quantity })}
           </span>
-          <span>
-            {t("allocationTotal", { total: `${allocatedTotal.toFixed(2)} ${line.currency}` })}
-          </span>
-          {hasMoneyWarning ? (
+          <span>{t("allocationTotal", { total: `${summary.totalAmount} ${line.currency}` })}</span>
+          {summary.hasMoneyWarning ? (
             <span className="text-[color:var(--accent-strong)]">{t("allocationMoneyWarning")}</span>
           ) : null}
           {searchError ? (

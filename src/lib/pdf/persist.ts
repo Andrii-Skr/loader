@@ -1,7 +1,9 @@
 import { DocumentStatus, Prisma } from "@/generated/prisma/client";
+import { parseDocumentDate } from "@/lib/documents/date";
 
 import { normalizePartyName } from "@/lib/documents/party-name";
 import { resolvePartyTaxId } from "@/lib/documents/party-tax-id";
+import { needsInvoiceReview } from "@/lib/pdf/integrity";
 import {
   type DocumentContour,
   getInvoiceParserByContour,
@@ -36,6 +38,7 @@ export const ingestVatInvoice = async ({
 }: IngestVatInvoiceInput) => {
   const parser = parserOverride ?? getInvoiceParserByContour(contour);
   const parsed = parser.parse(rawText);
+  const documentDate = parseDocumentDate(parsed.documentDate);
   const supplierName = normalizePartyName(parsed.supplier.name);
   const recipientName = normalizePartyName(parsed.recipient.name);
   const supplierTaxId = await resolvePartyTaxId({
@@ -159,7 +162,14 @@ export const ingestVatInvoice = async ({
     );
 
     const reviewRequired =
-      parsed.reviewRequired || lineItemsWithPublicationIssue.some((item) => item.parseFailed);
+      parsed.reviewRequired ||
+      needsInvoiceReview(
+        parsed,
+        parser.parserVersion.startsWith("invoice-ua")
+          ? { lineVatAvailable: false }
+          : { baseAmountIsSubtotal: contour === "UA" },
+      ) ||
+      lineItemsWithPublicationIssue.some((item) => item.parseFailed);
 
     const document = await tx.document.update({
       where: { id: documentId },
@@ -168,7 +178,7 @@ export const ingestVatInvoice = async ({
         parserVersion: parser.parserVersion,
         documentType: parsed.documentType,
         documentNumber: parsed.documentNumber,
-        documentDate: parseDocumentDate(parsed.documentDate),
+        documentDate,
         supplierId: supplier.id,
         recipientId: recipient.id,
         currency: getCurrencyByContour(contour),
@@ -240,11 +250,6 @@ export const ingestInvoiceDocument = async ({
       parsePublicationIssueDescription: parsePublicationIssueDescriptionUaV1,
     },
   });
-
-const parseDocumentDate = (value: string): Date => {
-  const [day, month, year] = value.split(".");
-  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-};
 
 const getCurrencyByContour = (contour: DocumentContour): string =>
   contour === "RU" ? "RUB" : "UAH";

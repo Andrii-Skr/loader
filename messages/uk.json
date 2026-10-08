@@ -258,6 +258,7 @@
       "replacementDetails": "Ланцюжок заміни: {replacements}.",
       "replacementEntry": "{previous} (версія {previousRevision}) → {current} (версія {currentRevision})",
       "parseFailedPrefix": "Помилка парсингу",
+      "invalidDocumentDate": "У документі вказано некоректну календарну дату.",
       "pdfReadFailed": "Не вдалося прочитати текст із PDF",
       "pdfHasNoTextLayer": "У PDF немає читабельного текстового шару. Потрібен OCR.",
       "pdfOcrFailed": "OCR fallback завершився помилкою",
@@ -340,6 +341,9 @@
       "forbidden": "Керувати відповідностями може лише адміністратор.",
       "invalidInput": "Некоректний запит.",
       "validationFailed": "Перевірте унікальність призначення, кількість і ціну: сума кількостей має збігатися з рядком PDF.",
+      "incompleteAllocation": "Виберіть видання та номер для кожного розподілу або видаліть незавершений рядок.",
+      "pricePrecision": "Введіть невід’ємну ціну: не більше двох знаків після коми та 13 цифр до неї.",
+      "quantityPrecision": "Введіть кількість: не більше трьох знаків після коми та 12 цифр до неї.",
       "saved": "Відповідності збережено."
     }
   }

@@ -1,4 +1,4 @@
-import { DocumentStatus, type Prisma, TaxCoverageStatus } from "@/generated/prisma/client";
+import { DocumentStatus, Prisma, TaxCoverageStatus } from "@/generated/prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
@@ -32,7 +32,7 @@ export type TaxCoverageCandidate = {
 };
 
 const quantityByIssue = (lines: CoverageLine[]) => {
-  const result = new Map<number, number>();
+  const result = new Map<number, Prisma.Decimal>();
 
   for (const line of lines) {
     if (line.publicationIssueId === null) {
@@ -41,7 +41,7 @@ const quantityByIssue = (lines: CoverageLine[]) => {
 
     result.set(
       line.publicationIssueId,
-      (result.get(line.publicationIssueId) ?? 0) + Number(line.quantity),
+      (result.get(line.publicationIssueId) ?? new Prisma.Decimal(0)).plus(line.quantity),
     );
   }
 
@@ -64,19 +64,24 @@ const fitsOutstandingInvoice = ({
     return false;
   }
 
-  const coveredQuantities = new Map<number, number>();
+  const coveredQuantities = new Map<number, Prisma.Decimal>();
   for (const coverage of invoice.invoiceCoverages) {
     const quantities = quantityByIssue(coverage.taxInvoiceDocument.lineItems);
     if (!quantities) continue;
 
     for (const [issueId, quantity] of quantities) {
-      coveredQuantities.set(issueId, (coveredQuantities.get(issueId) ?? 0) + quantity);
+      coveredQuantities.set(
+        issueId,
+        (coveredQuantities.get(issueId) ?? new Prisma.Decimal(0)).plus(quantity),
+      );
     }
   }
 
   for (const [issueId, taxQuantity] of taxQuantities) {
-    const remaining = (invoiceQuantities.get(issueId) ?? 0) - (coveredQuantities.get(issueId) ?? 0);
-    if (taxQuantity > remaining + Number.EPSILON) {
+    const remaining = (invoiceQuantities.get(issueId) ?? new Prisma.Decimal(0)).minus(
+      coveredQuantities.get(issueId) ?? 0,
+    );
+    if (taxQuantity.gt(remaining)) {
       return false;
     }
   }
@@ -164,19 +169,21 @@ const refreshInvoiceTaxFlag = async (tx: Prisma.TransactionClient, invoiceDocume
   if (!invoice) return;
 
   const required = quantityByIssue(invoice.lineItems);
-  const covered = new Map<number, number>();
+  const covered = new Map<number, Prisma.Decimal>();
   for (const coverage of invoice.invoiceCoverages) {
     const quantities = quantityByIssue(coverage.taxInvoiceDocument.lineItems);
     if (!quantities) continue;
     for (const [issueId, quantity] of quantities) {
-      covered.set(issueId, (covered.get(issueId) ?? 0) + quantity);
+      covered.set(issueId, (covered.get(issueId) ?? new Prisma.Decimal(0)).plus(quantity));
     }
   }
 
   const hasTaxInvoice =
     required !== null &&
     required.size > 0 &&
-    Array.from(required).every(([issueId, quantity]) => (covered.get(issueId) ?? 0) >= quantity);
+    Array.from(required).every(([issueId, quantity]) =>
+      (covered.get(issueId) ?? new Prisma.Decimal(0)).gte(quantity),
+    );
 
   await tx.document.update({ where: { id: invoiceDocumentId }, data: { hasTaxInvoice } });
 };
@@ -189,55 +196,75 @@ export const assignTaxInvoiceCoverage = async ({
   taxInvoiceDocumentId: number;
   invoiceDocumentId: number;
   isAutomatic: boolean;
-}) =>
-  prisma.$transaction(async (tx) => {
-    const [taxInvoice, invoice, coverageCount, existingCoverage] = await Promise.all([
-      tx.document.findUnique({
-        where: { id: taxInvoiceDocumentId },
-        include: { lineItems: { select: { publicationIssueId: true, quantity: true } } },
-      }),
-      tx.document.findUnique({
-        where: { id: invoiceDocumentId },
-        include: {
-          lineItems: { select: { publicationIssueId: true, quantity: true } },
-          invoiceCoverages: {
+}) => {
+  const assign = () =>
+    prisma.$transaction(
+      async (tx) => {
+        const [taxInvoice, invoice, coverageCount, existingCoverage] = await Promise.all([
+          tx.document.findUnique({
+            where: { id: taxInvoiceDocumentId },
+            include: { lineItems: { select: { publicationIssueId: true, quantity: true } } },
+          }),
+          tx.document.findUnique({
+            where: { id: invoiceDocumentId },
             include: {
-              taxInvoiceDocument: {
-                select: { lineItems: { select: { publicationIssueId: true, quantity: true } } },
+              lineItems: { select: { publicationIssueId: true, quantity: true } },
+              invoiceCoverages: {
+                include: {
+                  taxInvoiceDocument: {
+                    select: { lineItems: { select: { publicationIssueId: true, quantity: true } } },
+                  },
+                },
               },
             },
-          },
-        },
-      }),
-      tx.documentTaxCoverage.count({ where: { invoiceDocumentId } }),
-      tx.documentTaxCoverage.findUnique({ where: { taxInvoiceDocumentId } }),
-    ]);
+          }),
+          tx.documentTaxCoverage.count({ where: { invoiceDocumentId } }),
+          tx.documentTaxCoverage.findUnique({ where: { taxInvoiceDocumentId } }),
+        ]);
 
-    if (
-      !taxInvoice ||
-      !invoice ||
-      taxInvoice.documentTypeId !== TAX_INVOICE_TYPE_ID ||
-      !taxInvoice.isCurrent ||
-      invoice.documentTypeId !== INVOICE_TYPE_ID ||
-      !invoice.isCurrent ||
-      taxInvoice.supplierId !== invoice.supplierId ||
-      taxInvoice.recipientId !== invoice.recipientId ||
-      existingCoverage ||
-      coverageCount >= MAX_TAX_INVOICES_PER_INVOICE ||
-      !fitsOutstandingInvoice({ taxLines: taxInvoice.lineItems, invoice })
-    ) {
-      throw new Error("The selected documents can no longer be linked.");
+        if (
+          !taxInvoice ||
+          !invoice ||
+          taxInvoice.documentTypeId !== TAX_INVOICE_TYPE_ID ||
+          !taxInvoice.isCurrent ||
+          invoice.documentTypeId !== INVOICE_TYPE_ID ||
+          !invoice.isCurrent ||
+          taxInvoice.supplierId !== invoice.supplierId ||
+          taxInvoice.recipientId !== invoice.recipientId ||
+          existingCoverage ||
+          coverageCount >= MAX_TAX_INVOICES_PER_INVOICE ||
+          !fitsOutstandingInvoice({ taxLines: taxInvoice.lineItems, invoice })
+        ) {
+          throw new Error("The selected documents can no longer be linked.");
+        }
+
+        await tx.documentTaxCoverage.create({
+          data: { invoiceDocumentId, taxInvoiceDocumentId, isAutomatic },
+        });
+        await tx.document.update({
+          where: { id: taxInvoiceDocumentId },
+          data: { taxCoverageStatus: TaxCoverageStatus.MATCHED },
+        });
+        await refreshInvoiceTaxFlag(tx, invoiceDocumentId);
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+
+  // Re-read the available quantity on every retry; concurrent assignments may have consumed it.
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await assign();
+    } catch (error) {
+      if (
+        attempt >= 3 ||
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        error.code !== "P2034"
+      ) {
+        throw error;
+      }
     }
-
-    await tx.documentTaxCoverage.create({
-      data: { invoiceDocumentId, taxInvoiceDocumentId, isAutomatic },
-    });
-    await tx.document.update({
-      where: { id: taxInvoiceDocumentId },
-      data: { taxCoverageStatus: TaxCoverageStatus.MATCHED },
-    });
-    await refreshInvoiceTaxFlag(tx, invoiceDocumentId);
-  });
+  }
+};
 
 export const autoMatchTaxInvoice = async (taxInvoiceDocumentId: number) => {
   const candidates = await getTaxCoverageCandidates(taxInvoiceDocumentId);

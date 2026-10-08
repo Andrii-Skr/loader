@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { DocumentStatus } from "@/generated/prisma/client";
 import { type AppLocale, routing } from "@/i18n/routing";
+import { InvalidDocumentDateError, parseDocumentDate } from "@/lib/documents/date";
 import { normalizePartyName } from "@/lib/documents/party-name";
 import { getStoredPartyTaxId, resolvePartyTaxId } from "@/lib/documents/party-tax-id";
 import { copyDocumentIssueMappings, selectInvoiceDocumentVersion } from "@/lib/documents/revisions";
@@ -49,6 +50,7 @@ export type UploadInvoiceActionResult = {
       | "documentContourAmbiguous"
       | "documentContourUnknown"
       | "parseFailed"
+      | "invalidDocumentDate"
       | "pdfReadFailed"
       | "pdfHasNoTextLayer"
       | "pdfOcrFailed"
@@ -317,11 +319,6 @@ export const deleteDocument = async ({
       onInvalidInput: () => ({ errorKey: "invalidInput", success: false }),
     },
   )({ documentId, locale });
-
-const parseDocumentDate = (value: string): Date => {
-  const [day, month, year] = value.split(".");
-  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-};
 
 const emptyUploadResult = (
   errorKey: UploadInvoiceActionResult["errorKey"],
@@ -600,8 +597,16 @@ const uploadSingleDocument = async ({
 
     return {
       fileName: file.name,
-      errorKey: "parseFailed" as const,
-      detail: error instanceof Error ? error.message : null,
+      errorKey:
+        error instanceof InvalidDocumentDateError
+          ? ("invalidDocumentDate" as const)
+          : ("parseFailed" as const),
+      detail:
+        error instanceof InvalidDocumentDateError
+          ? null
+          : error instanceof Error
+            ? error.message
+            : null,
     };
   }
 };

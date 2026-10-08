@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DocumentStatus } from "@/generated/prisma/client";
+import { InvalidDocumentDateError } from "@/lib/documents/date";
 import { InvoiceDetectionError } from "@/lib/pdf/parser";
 
 const authMock = vi.hoisted(() => vi.fn());
@@ -738,6 +739,19 @@ describe("uploadInvoice", () => {
         sourceFileName: "unknown.pdf",
       }),
     });
+  });
+
+  it("returns a translated error key for an invalid calendar date", async () => {
+    detectAndParseDocumentMock.mockImplementation(() => {
+      throw new InvalidDocumentDateError();
+    });
+    const formData = new FormData();
+    formData.append("pdf", new File(["pdf"], "invalid-date.pdf", { type: "application/pdf" }));
+    const result = await uploadInvoice(formData);
+    expect(result.results[0]).toMatchObject({ errorKey: "invalidDocumentDate", detail: null });
+    expect(result.failedCount).toBe(1);
+    expect(ingestVatInvoiceMock).not.toHaveBeenCalled();
+    expect(ingestInvoiceDocumentMock).not.toHaveBeenCalled();
   });
 
   it("keeps an unsupported XLS upload for troubleshooting and a later retry", async () => {

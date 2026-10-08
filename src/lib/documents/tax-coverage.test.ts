@@ -9,8 +9,14 @@ const prismaState = vi.hoisted(() => ({
 }));
 
 const transactionState = vi.hoisted(() => ({
+  run: vi.fn(),
   tx: {
-    documentTaxCoverage: { findMany: vi.fn() },
+    documentTaxCoverage: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+    },
     document: {
       delete: vi.fn(),
       deleteMany: vi.fn(),
@@ -24,9 +30,7 @@ const transactionState = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    $transaction: vi.fn(async (callback: (tx: typeof transactionState.tx) => unknown) =>
-      callback(transactionState.tx),
-    ),
+    $transaction: transactionState.run,
     document: {
       findUnique: prismaState.documentFindUnique,
       findMany: prismaState.documentFindMany,
@@ -36,6 +40,7 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 import {
+  assignTaxInvoiceCoverage,
   deleteDocumentWithCoverageRefresh,
   getTaxCoverageCandidates,
   rematchUncoveredTaxInvoicesForInvoice,
@@ -43,6 +48,11 @@ import {
 
 describe("getTaxCoverageCandidates", () => {
   beforeEach(() => {
+    transactionState.run.mockReset();
+    transactionState.run.mockImplementation(async (callback) => callback(transactionState.tx));
+    transactionState.tx.documentTaxCoverage.findUnique.mockReset();
+    transactionState.tx.documentTaxCoverage.count.mockReset();
+    transactionState.tx.documentTaxCoverage.create.mockReset();
     prismaState.documentFindUnique.mockReset();
     prismaState.documentFindMany.mockReset();
     prismaState.documentUpdate.mockReset();
@@ -276,5 +286,154 @@ describe("getTaxCoverageCandidates", () => {
     ]);
 
     await expect(getTaxCoverageCandidates(10)).resolves.toEqual([]);
+  });
+
+  it("accepts an exact decimal remainder and rejects actual overcoverage", async () => {
+    prismaState.documentFindUnique.mockResolvedValue({
+      id: 10,
+      documentTypeId: 1,
+      isCurrent: true,
+      supplierId: 1,
+      recipientId: 2,
+      lineItems: [{ publicationIssueId: 5, quantity: new Prisma.Decimal("0.1") }],
+    });
+    prismaState.documentFindMany.mockResolvedValue([
+      {
+        id: 20,
+        documentNumber: "INV-1",
+        documentDate: new Date("2026-04-02"),
+        sourceFileName: "invoice.pdf",
+        lineItems: [{ publicationIssueId: 5, quantity: new Prisma.Decimal("100.3") }],
+        invoiceCoverages: [
+          {
+            taxInvoiceDocument: {
+              lineItems: [{ publicationIssueId: 5, quantity: new Prisma.Decimal("100.2") }],
+            },
+          },
+        ],
+      },
+    ]);
+
+    expect(await getTaxCoverageCandidates(10)).toMatchObject([{ invoiceDocumentId: 20 }]);
+
+    prismaState.documentFindUnique.mockResolvedValue({
+      id: 10,
+      documentTypeId: 1,
+      isCurrent: true,
+      supplierId: 1,
+      recipientId: 2,
+      lineItems: [{ publicationIssueId: 5, quantity: new Prisma.Decimal("0.101") }],
+    });
+    expect(await getTaxCoverageCandidates(10)).toEqual([]);
+  });
+
+  it("marks an invoice fully covered when decimal quantities add up exactly", async () => {
+    transactionState.tx.document.findUnique
+      .mockResolvedValueOnce({ id: 10, sourceFilePath: null })
+      .mockResolvedValueOnce({
+        lineItems: [{ publicationIssueId: 5, quantity: new Prisma.Decimal("0.8") }],
+        invoiceCoverages: ["0.1", "0.7"].map((quantity) => ({
+          taxInvoiceDocument: {
+            lineItems: [{ publicationIssueId: 5, quantity: new Prisma.Decimal(quantity) }],
+          },
+        })),
+      });
+    transactionState.tx.documentTaxCoverage.findMany.mockResolvedValue([
+      { invoiceDocumentId: 20, taxInvoiceDocumentId: 10 },
+    ]);
+
+    await deleteDocumentWithCoverageRefresh({ documentId: 10, documentTypeId: 1 });
+
+    expect(transactionState.tx.document.update).toHaveBeenCalledWith({
+      where: { id: 20 },
+      data: { hasTaxInvoice: true },
+    });
+  });
+});
+
+describe("assignTaxInvoiceCoverage", () => {
+  const input = { taxInvoiceDocumentId: 10, invoiceDocumentId: 20, isAutomatic: false };
+  const conflict = new Prisma.PrismaClientKnownRequestError("Serialization conflict", {
+    code: "P2034",
+    clientVersion: "7",
+  });
+  const line = { publicationIssueId: 5, quantity: new Prisma.Decimal(1) };
+  const taxInvoice = {
+    id: 10,
+    documentTypeId: 1,
+    isCurrent: true,
+    supplierId: 1,
+    recipientId: 2,
+    lineItems: [line],
+  };
+  const invoice = {
+    id: 20,
+    documentTypeId: 2,
+    isCurrent: true,
+    supplierId: 1,
+    recipientId: 2,
+    lineItems: [line],
+    invoiceCoverages: [],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    transactionState.run.mockReset();
+    transactionState.run.mockImplementation(async (callback) => callback(transactionState.tx));
+    transactionState.tx.document.findUnique.mockReset();
+    transactionState.tx.document.findUnique.mockImplementation(async ({ where }) =>
+      where.id === 10 ? taxInvoice : invoice,
+    );
+    transactionState.tx.documentTaxCoverage.count.mockResolvedValue(0);
+    transactionState.tx.documentTaxCoverage.findUnique.mockResolvedValue(null);
+  });
+
+  it("checks and writes coverage in a serializable transaction", async () => {
+    await assignTaxInvoiceCoverage(input);
+
+    expect(transactionState.run).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+    expect(transactionState.tx.documentTaxCoverage.create).toHaveBeenCalledWith({ data: input });
+    expect(transactionState.tx.document.update).toHaveBeenCalledWith({
+      where: { id: 10 },
+      data: { taxCoverageStatus: TaxCoverageStatus.MATCHED },
+    });
+  });
+
+  it("rechecks the remaining quantity after a conflict instead of reusing stale validation", async () => {
+    transactionState.run.mockImplementationOnce(async (callback) => {
+      await callback(transactionState.tx);
+      transactionState.tx.document.findUnique.mockImplementation(async ({ where }) =>
+        where.id === 10
+          ? taxInvoice
+          : {
+              ...invoice,
+              invoiceCoverages: [{ taxInvoiceDocument: { lineItems: [line] } }],
+            },
+      );
+      transactionState.tx.documentTaxCoverage.count.mockResolvedValue(1);
+      throw conflict;
+    });
+
+    await expect(assignTaxInvoiceCoverage(input)).rejects.toThrow("can no longer be linked");
+    expect(transactionState.run).toHaveBeenCalledTimes(2);
+    // The aborted first attempt wrote once; the retry must reject before another write.
+    expect(transactionState.tx.documentTaxCoverage.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries serialization conflicts at most three times", async () => {
+    transactionState.run.mockRejectedValue(conflict);
+
+    await expect(assignTaxInvoiceCoverage(input)).rejects.toBe(conflict);
+    expect(transactionState.run).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry unrelated database failures", async () => {
+    const error = new Error("Database unavailable");
+    transactionState.run.mockRejectedValue(error);
+
+    await expect(assignTaxInvoiceCoverage(input)).rejects.toBe(error);
+    expect(transactionState.run).toHaveBeenCalledTimes(1);
   });
 });
