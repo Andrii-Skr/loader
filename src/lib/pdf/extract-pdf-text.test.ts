@@ -21,6 +21,7 @@ vi.mock("unpdf", () => ({
 }));
 vi.mock("tesseract.js", () => ({ PSM: { AUTO: 3 }, createWorker: mocks.createWorker }));
 import { extractPdfText } from "./extract-pdf-text";
+import positionedCells from "./fixtures/order-invoices/9005-positions.json";
 
 beforeEach(() => {
   for (const mock of Object.values(mocks)) mock.mockReset();
@@ -91,4 +92,22 @@ it("keeps bytes available for OCR after PDF.js transfers the first buffer", asyn
   expect(await extractPdfText("mixed.pdf")).toBe("Header\n\nScanned table\n\nFooter");
   expect(mocks.getProxy.mock.calls[1][0]).toEqual(new Uint8Array(Buffer.from("pdf")));
   expect(mocks.ocrDestroy).toHaveBeenCalledTimes(1);
+});
+
+it("preserves a blank final amount in a discount invoice using PDF cell positions", async () => {
+  const items = positionedCells.map(([str, x, y, width, hasEOL]) => ({
+    str: String(str),
+    transform: [1, 0, 0, 1, Number(x), Number(y)],
+    width: Number(width),
+    hasEOL: Boolean(hasEOL),
+  }));
+  const getPage = vi.fn(async () => ({ getTextContent: async () => ({ items }) }));
+  mocks.getProxy.mockReset();
+  mocks.getProxy.mockResolvedValue({ getPage, loadingTask: { destroy: mocks.destroy } });
+  mocks.extract.mockResolvedValue({ text: ["Номер замовлення Знижка"] });
+  const text = (await extractPdfText("discount.pdf")).replace(/\s+/gu, " ");
+  expect(text).toContain("3 000,00 3 000,00 0,00 3 6003");
+  expect(text).toContain("1 000,00 1 000,00 4 6004");
+  expect(getPage).toHaveBeenCalledWith(1);
+  expect(mocks.destroy).toHaveBeenCalledOnce();
 });

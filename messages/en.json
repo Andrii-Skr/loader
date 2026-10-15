@@ -31,7 +31,8 @@
     "parserVersion": "Parser",
     "restrictedRoom": "Restricted ledger room",
     "editionMappings": "Edition mappings",
-    "addUser": "Add user"
+    "addUser": "Add user",
+    "counterparties": "Counterparties"
   },
   "Login": {
     "titleLine1": "Access to",
@@ -264,7 +265,9 @@
       "pdfOcrFailed": "OCR fallback failed",
       "pdfOcrUnavailable": "OCR is unavailable because language data could not be loaded",
       "requestFailed": "The upload request failed. Check the file size and try again.",
-      "selectionFailed": "Could not set the current invoice version."
+      "selectionFailed": "Could not set the current invoice version.",
+      "partySelectionRequired": "Recognize counterparties",
+      "partyResolutionFailed": "This name variant already belongs to another card in this scope. Review it in the directory."
     }
   },
   "TaxCoverage": {
@@ -345,6 +348,55 @@
       "pricePrecision": "Enter a non-negative price with at most two decimal places and 13 digits before the decimal point.",
       "quantityPrecision": "Enter a quantity with at most three decimal places and 12 digits before the decimal point.",
       "saved": "Mappings saved."
+    }
+  },
+  "Counterparties": {
+    "title": "Counterparties",
+    "description": "Keep your own names and remember how suppliers write them. Unrecognized counterparties require confirmation before a new card is created.",
+    "back": "Back to documents",
+    "supplier": "Suppliers",
+    "recipient": "Recipients",
+    "name": "Our name",
+    "taxId": "Tax ID / company code",
+    "taxIdOptional": "Tax ID / company code (optional)",
+    "noTaxId": "Not provided",
+    "documents": "Documents",
+    "aliases": "Names in documents",
+    "actions": "Actions",
+    "search": "Search names and tax IDs",
+    "createNew": "Create a new counterparty",
+    "choose": "Choose an existing counterparty",
+    "rename": "Rename",
+    "addAlias": "Add a name variant",
+    "merge": "Merge duplicate",
+    "removeAlias": "Remove variant {name}",
+    "allSuppliers": "All suppliers",
+    "empty": "No counterparties found.",
+    "confirmTitle": "Recognize counterparties",
+    "confirmDescription": "Check the counterparties in {file}. The file will be imported after confirmation.",
+    "rememberHint": "Your choice will be remembered. A recipient name variant is saved for this supplier.",
+    "confirm": "Confirm and import",
+    "cancelUpload": "Skip this file",
+    "cancel": "Cancel",
+    "save": "Save",
+    "pending": "Saving…",
+    "mergeHint": "All documents and saved name variants of {name} will be transferred to the selected card. Document lines and their matches will be preserved.",
+    "editorHint": "The canonical name is used in all linked documents. Name variants help recognize future imports.",
+    "sourceName": "Name as written in the document",
+    "contour": "Document country",
+    "ua": "Ukraine",
+    "ru": "Russia",
+    "sourceSupplier": "Supplier using this name",
+    "mergeTarget": "Keep this card",
+    "mergeConfirm": "Merge and transfer documents",
+    "errors": {
+      "invalidInput": "Fill in the required fields.",
+      "missingSession": "Sign in again.",
+      "aliasConflict": "This name variant already belongs to another card in this scope. Review it in the directory.",
+      "taxConflict": "The tax IDs differ. These counterparties cannot be linked or merged. When merging, keep the card with the real tax ID.",
+      "duplicateName": "A card with this name already exists. Select it instead.",
+      "saveFailed": "Could not save. Try again.",
+      "mergeConflict": "These cards have overlapping document versions. Resolve the conflict before merging."
     }
   }
 }

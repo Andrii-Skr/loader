@@ -10,8 +10,6 @@ import { z } from "zod";
 import { DocumentStatus } from "@/generated/prisma/client";
 import { type AppLocale, routing } from "@/i18n/routing";
 import { InvalidDocumentDateError, parseDocumentDate } from "@/lib/documents/date";
-import { normalizePartyName } from "@/lib/documents/party-name";
-import { getStoredPartyTaxId, resolvePartyTaxId } from "@/lib/documents/party-tax-id";
 import { copyDocumentIssueMappings, selectInvoiceDocumentVersion } from "@/lib/documents/revisions";
 import {
   autoMatchTaxInvoice,
@@ -32,9 +30,21 @@ import type { ParsedVatInvoice } from "@/lib/pdf/types";
 import { prisma } from "@/lib/prisma";
 import { abortAction, appAction, appFormDataAction } from "@/utils/appAction";
 
+import {
+  type PartyChoices,
+  type PartySelection,
+  partyChoicesSchema,
+} from "@/lib/counterparties/schema";
+import {
+  PartyResolutionError,
+  PartySelectionRequired,
+  resolveCounterparties,
+} from "@/lib/counterparties/service";
+
 const uploadDocumentsSchema = z.object({
   files: z.array(z.instanceof(File)),
   extractedText: z.string().optional(),
+  partyChoices: partyChoicesSchema.optional(),
 });
 
 export type UploadInvoiceActionResult = {
@@ -46,6 +56,8 @@ export type UploadInvoiceActionResult = {
   results: Array<{
     fileName: string;
     errorKey:
+      | "partySelectionRequired"
+      | "partyResolutionFailed"
       | "duplicateDocument"
       | "documentContourAmbiguous"
       | "documentContourUnknown"
@@ -56,6 +68,7 @@ export type UploadInvoiceActionResult = {
       | "pdfOcrFailed"
       | "pdfOcrUnavailable"
       | null;
+    partySelection?: PartySelection;
     detail?: string | null;
     replacedDocumentId?: number | null;
     replacedDocumentName?: string | null;
@@ -113,6 +126,7 @@ export const uploadDocuments = appFormDataAction<
   {
     files: File[];
     extractedText: string;
+    partyChoices?: PartyChoices;
   },
   z.infer<typeof uploadDocumentsSchema>,
   UploadInvoiceActionResult
@@ -139,6 +153,7 @@ export const uploadDocuments = appFormDataAction<
           file,
           extractedText: parsedInput.extractedText?.trim() || null,
           uploadedById: existingUser.id,
+          partyChoices: parsedInput.partyChoices,
         }),
       );
     }
@@ -150,8 +165,12 @@ export const uploadDocuments = appFormDataAction<
     return {
       errorKey: null,
       successCount: results.filter((item) => item.errorKey === null).length,
-      failedCount: results.filter((item) => item.errorKey && item.errorKey !== "duplicateDocument")
-        .length,
+      failedCount: results.filter(
+        (item) =>
+          item.errorKey &&
+          item.errorKey !== "duplicateDocument" &&
+          item.errorKey !== "partySelectionRequired",
+      ).length,
       duplicateCount: results.filter((item) => item.errorKey === "duplicateDocument").length,
       replacementCount: results.filter((item) => Number.isInteger(item.replacedDocumentId)).length,
       results,
@@ -172,9 +191,21 @@ export const uploadDocuments = appFormDataAction<
         return abortAction(emptyUploadResult("missingPdf"));
       }
 
+      let partyChoices: unknown;
+      try {
+        const raw = formData.get("partyChoices");
+        partyChoices = raw ? JSON.parse(String(raw)) : undefined;
+      } catch {
+        return abortAction(emptyUploadResult("invalidInput"));
+      }
+      if (partyChoices && selectedFiles.length !== 1)
+        return abortAction(emptyUploadResult("invalidInput"));
+      const choiceResult = partyChoicesSchema.optional().safeParse(partyChoices);
+      if (!choiceResult.success) return abortAction(emptyUploadResult("invalidInput"));
       return {
         ok: true,
         value: {
+          partyChoices: choiceResult.data,
           files: selectedFiles,
           extractedText: String(formData.get("extractedText") ?? ""),
         },
@@ -335,10 +366,12 @@ const uploadSingleDocument = async ({
   file,
   extractedText,
   uploadedById,
+  partyChoices,
 }: {
   file: File;
   extractedText: string | null;
   uploadedById: number;
+  partyChoices?: PartyChoices;
 }) => {
   const sourceFilePath = await saveUploadedFile(file);
   let createdId: number | null = null;
@@ -379,16 +412,8 @@ const uploadSingleDocument = async ({
 
     const { contour, documentTypeId, parsed, parserVersion } = detectedDocument;
     const documentDate = parseDocumentDate(parsed.documentDate);
-    const supplierTaxId = await resolvePartyTaxId({
-      party: { ...parsed.supplier, name: normalizePartyName(parsed.supplier.name) },
-      contour,
-      findExistingTaxIds: (name) =>
-        prisma.supplier.findMany({
-          where: { name: { equals: name, mode: "insensitive" } },
-          select: { taxId: true },
-          take: 2,
-        }),
-    });
+    const resolvedParties = await resolveCounterparties(parsed, contour, partyChoices);
+    const supplierTaxId = resolvedParties.supplier.taxId;
     const version = await getDocumentVersion({
       contour,
       documentDate,
@@ -411,6 +436,7 @@ const uploadSingleDocument = async ({
         contour,
         parsed,
         supplierTaxId,
+        recipientTaxId: resolvedParties.recipient.taxId,
       }))
     ) {
       throw new DuplicateDocumentError("Equivalent invoice content already exists");
@@ -437,6 +463,7 @@ const uploadSingleDocument = async ({
       await ingestVatInvoice({
         documentId: createdDocumentId,
         contour,
+        resolvedParties,
         rawText: resolvedText ?? "",
       });
       if (version.currentDocumentId !== null) {
@@ -458,6 +485,7 @@ const uploadSingleDocument = async ({
         rawText: resolvedText ?? parsed.rawText,
         parsed,
         parserVersion,
+        resolvedParties,
       });
       if (version.supersedesId) {
         await copyDocumentIssueMappings({
@@ -489,8 +517,8 @@ const uploadSingleDocument = async ({
                 sourceFileName: file.name,
                 documentNumber: parsed.documentNumber,
                 documentDate: parsed.documentDate,
-                supplierName: normalizePartyName(parsed.supplier.name),
-                recipientName: normalizePartyName(parsed.recipient.name),
+                supplierName: resolvedParties.supplier.name,
+                recipientName: resolvedParties.recipient.name,
                 totalAmount: parsed.totalAmount,
                 currency: contour === "RU" ? "RUB" : "UAH",
                 revision: version.revision,
@@ -499,6 +527,19 @@ const uploadSingleDocument = async ({
           : null,
     };
   } catch (error) {
+    if (error instanceof PartySelectionRequired || error instanceof PartyResolutionError) {
+      await deleteUploadedFile(sourceFilePath);
+      return {
+        fileName: file.name,
+        errorKey:
+          error instanceof PartySelectionRequired
+            ? ("partySelectionRequired" as const)
+            : ("partyResolutionFailed" as const),
+        partySelection:
+          error instanceof PartySelectionRequired ? { questions: error.questions } : undefined,
+        detail: error instanceof PartyResolutionError ? error.message : null,
+      };
+    }
     if (error instanceof PdfExtractionError) {
       await deleteUploadedFile(sourceFilePath);
 
@@ -772,10 +813,12 @@ const hasEquivalentInvoiceContent = async ({
   contour,
   parsed,
   supplierTaxId,
+  recipientTaxId,
 }: {
   contour: DocumentContour;
   parsed: ParsedVatInvoice;
   supplierTaxId: string;
+  recipientTaxId: string;
 }) => {
   const supplier = await prisma.supplier.findUnique({
     where: { taxId: supplierTaxId },
@@ -811,20 +854,10 @@ const hasEquivalentInvoiceContent = async ({
       },
     },
   });
-  const parsedRecipientTaxId = parsed.recipient.taxId
-    ? getStoredPartyTaxId({
-        contour,
-        taxId: parsed.recipient.taxId,
-        kpp: parsed.recipient.kpp,
-      })
-    : null;
   const parsedLineSignatures = parsed.lineItems.map(getParsedInvoiceLineSignature);
 
   return candidates.some((candidate) => {
-    const sameRecipient = parsedRecipientTaxId
-      ? candidate.recipient?.taxId === parsedRecipientTaxId
-      : normalizeInvoiceText(candidate.recipient?.name ?? null) ===
-        normalizeInvoiceText(normalizePartyName(parsed.recipient.name));
+    const sameRecipient = candidate.recipient?.taxId === recipientTaxId;
     const sameLines =
       candidate.lineItems.length === parsedLineSignatures.length &&
       candidate.lineItems.every(

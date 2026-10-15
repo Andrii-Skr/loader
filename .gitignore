@@ -14,3 +14,9 @@ storage/uploads
 src/generated/prisma
 
 /temp
+
+# Local document previews, scratch files and non-example environment files.
+/tmp/
+.env.*
+!.env.example
+!.env.docker.example

@@ -253,6 +253,11 @@ export default async function LocalizedDashboardPage({
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Badge>{common("records", { count: documents.length })}</Badge>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/dashboard/counterparties" locale={locale}>
+                {common("counterparties")}
+              </Link>
+            </Button>
             {canUseWorkspace ? (
               <Button asChild size="sm" variant="outline">
                 <Link href="/dashboard/tax-coverage" locale={locale}>

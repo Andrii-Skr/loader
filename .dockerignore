@@ -12,3 +12,5 @@ src/generated/prisma
 .agents
 .codex
 README.md
+tmp
+temp

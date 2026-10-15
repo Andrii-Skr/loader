@@ -15,11 +15,11 @@ an existing `PostgreSQL` database.
 
 ## Key Paths
 
-- [auth.ts](/Users/macdark/Documents/js/loader/auth.ts)
-- [prisma/schema.prisma](/Users/macdark/Documents/js/loader/prisma/schema.prisma)
-- [src/app/(app)/dashboard/page.tsx](/Users/macdark/Documents/js/loader/src/app/(app)/dashboard/page.tsx)
-- [src/lib/pdf/parser.ts](/Users/macdark/Documents/js/loader/src/lib/pdf/parser.ts)
-- [src/lib/pdf/persist.ts](/Users/macdark/Documents/js/loader/src/lib/pdf/persist.ts)
+- [auth.ts](auth.ts)
+- [prisma/schema.prisma](prisma/schema.prisma)
+- [src/app/(app)/dashboard/page.tsx](src/app/(app)/dashboard/page.tsx)
+- [src/lib/pdf/parser.ts](src/lib/pdf/parser.ts)
+- [src/lib/pdf/persist.ts](src/lib/pdf/persist.ts)
 
 ## Current State
 
@@ -105,4 +105,18 @@ public HTTPS endpoint.
 Uploaded PDFs are stored in the `uploads` named Docker volume and survive container recreation.
 The `/api/health` endpoint reports ready only when the primary PostgreSQL connection succeeds.
 Configure the reverse proxy to forward the public HTTPS hostname to `http://127.0.0.1:3000`.
+
+For nginx, set the request body limit in the application's existing `server` block to match
+the 10 MB Server Actions limit in `next.config.ts`:
+
+```nginx
+client_max_body_size 10m;
+```
+
+Validate and reload the configuration with `sudo nginx -t && sudo systemctl reload nginx`.
+The default nginx limit is 1 MB; larger uploads are rejected with HTTP 413 before reaching
+the application. For example, `e2e/1/invoce/СФ-9899.xls` is 1,342,464 bytes and exceeds that
+default. If the UI reports that the file could not be sent, check the upload request in the
+browser Network panel and the reverse proxy error log for HTTP 413 or
+`client intended to send too large body`.
 # loader

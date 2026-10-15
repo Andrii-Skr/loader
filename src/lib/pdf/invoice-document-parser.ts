@@ -131,7 +131,8 @@ const parseActFooterParties = (
   return supplier && recipient ? { supplier, recipient } : null;
 };
 
-const parseInvoiceLines = (text: string): ParsedLineItem[] => {
+const parseInvoiceLines = (rawText: string): ParsedLineItem[] => {
+  const text = normalizeSpaces(rawText);
   const tableStart =
     [
       text.indexOf("№ Товари (роботи, послуги)"),
@@ -145,23 +146,34 @@ const parseInvoiceLines = (text: string): ParsedLineItem[] => {
   const end = body.search(/(?:Всього:|Разом:|Всього\s+з\s+ПДВ|Сума\s+ПДВ)/iu);
   const table = (end >= 0 ? body.slice(0, end) : body).replace(/\r/g, " ");
   if (/Номер замовлення Дата замовлення/iu.test(table)) {
-    return Array.from(
-      table.matchAll(
-        /(\d+)\s+\d+\s+\d{2}\.\d{2}\.\d{4}\s+(.*?)\s+(\d+(?:,\d+)?)\s+(тис\.прим)\s*([0-9\s]+,\d{2,10})\s+([0-9\s]+,\d{2})/giu,
-      ),
-    ).map((match) => {
-      const [, lineNo, description, quantity, unitName, unitPrice, lineBaseAmount] = match;
-      return {
-        ...emptyLineItem({
-          lineNo: Number(lineNo),
-          description: description ?? "",
-          quantity: quantity ?? "0",
-          unitName: unitName ?? null,
-          unitPrice: unitPrice ?? "0",
-          lineBaseAmount: lineBaseAmount ?? "0",
-        }),
-        rawRowText: normalizeSpaces(match[0]),
-      };
+    // Bound each order row before reading its numeric columns. Descriptions can
+    // wrap, and PDF extraction can join the unit directly to the price.
+    const rows = Array.from(table.matchAll(/(?:^|\s)(\d+)\s+\S+\s+\d{2}\.\d{2}\.\d{4}\s+/gu));
+    return rows.flatMap((row, index) => {
+      const start = (row.index ?? 0) + row[0].length;
+      const end = rows[index + 1]?.index ?? table.length;
+      const body = table.slice(start, end).trim();
+      const columns = body.match(
+        /^(.*?)\s+(\d+(?:[,.]\d+)?)\s+(тис\.прим)\s*(\d[\d\s]*,\d{2,10})\s+(.+)$/iu,
+      );
+      if (!columns) return [];
+      const [, description, quantity, unitName, unitPrice, amountsText] = columns;
+      const amounts = amountsText?.match(/(?:\d{1,3}(?:\s\d{3})+|\d+),\d{2}/gu);
+      const lineBaseAmount = amounts?.at(-1);
+      if (!lineBaseAmount) return [];
+      return [
+        {
+          ...emptyLineItem({
+            lineNo: Number(row[1]),
+            description: description ?? "",
+            quantity: quantity ?? "0",
+            unitName: unitName ?? null,
+            unitPrice: unitPrice ?? "0",
+            lineBaseAmount,
+          }),
+          rawRowText: normalizeSpaces(table.slice(row.index, end)),
+        },
+      ];
     });
   }
 
@@ -225,13 +237,16 @@ export const parseUaInvoiceDocument = (rawText: string): ParsedVatInvoice => {
   }
 
   const lineItems = parseInvoiceLines(text);
-  const baseAmount = parseTotal(text, /(?:Всього:|Разом:|Разом без ПДВ:)\s*([0-9\s]+[,.]\d{2})/iu);
+  // Discount layouts contain subtotal, discount and final base on the same line.
+  const summary = text.match(/(?:Всього:|Разом:|Разом без ПДВ:)\s*([\d\s,.]+)/iu)?.[1];
+  const baseAmount = summary?.match(/(?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)[,.]\d{2}/gu)?.at(-1);
+  const normalizedBaseAmount = baseAmount ? normalizeMoney(baseAmount) : null;
   const vatAmount = parseTotal(text, /Сума\s+ПДВ:\s*([0-9\s]+[,.]\d{2})/iu);
   const totalAmount =
     parseTotal(text, /(?:Всього\s+(?:із|з)\s+ПДВ|Усього\s+з\s+ПДВ):\s*([0-9\s]+[,.]\d{2})/iu) ??
-    baseAmount;
+    normalizedBaseAmount;
 
-  if (!supplier.name || !recipient.name || !baseAmount || !totalAmount) {
+  if (!supplier.name || !recipient.name || !normalizedBaseAmount || !totalAmount) {
     throw new InvoiceDocumentParseError("Field not found: invoice parties or total");
   }
 
@@ -243,11 +258,11 @@ export const parseUaInvoiceDocument = (rawText: string): ParsedVatInvoice => {
     recipient: { name: recipient.name, taxId: recipient.taxId, kpp: null },
     totalAmount,
     vatAmount,
-    baseAmount,
+    baseAmount: normalizedBaseAmount,
     lineItems,
     rawText,
     reviewRequired: needsInvoiceReview(
-      { lineItems, totalAmount, vatAmount, baseAmount },
+      { lineItems, totalAmount, vatAmount, baseAmount: normalizedBaseAmount },
       { lineVatAvailable: false },
     ),
   };

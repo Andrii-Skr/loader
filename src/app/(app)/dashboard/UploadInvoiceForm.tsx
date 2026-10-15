@@ -30,8 +30,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useRouter } from "@/i18n/navigation";
-import { normalizePartyName } from "@/lib/documents/party-name";
+import type { PartyChoices, PartySelection } from "@/lib/counterparties/schema";
 import { uploadDocumentBatch } from "@/lib/documents/upload-batch";
+import { PartyChoiceDialog } from "./PartyChoiceDialog";
 
 type UploadDocumentValues = {
   document: File[];
@@ -59,6 +60,7 @@ export function UploadDocumentForm() {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations("UploadForm");
+  const counterpartiesT = useTranslations("Counterparties");
   const [isPending, startTransition] = useTransition();
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -69,6 +71,10 @@ export function UploadDocumentForm() {
   const [versionSelections, setVersionSelections] = useState<
     Array<{ previous: InvoiceVersionSummary; uploaded: InvoiceVersionSummary }>
   >([]);
+  const [partySelections, setPartySelections] = useState<
+    Array<{ file: File; selection: PartySelection; choices: PartyChoices }>
+  >([]);
+  const [partyError, setPartyError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const form = useForm<UploadDocumentValues>({
     defaultValues: {
@@ -102,7 +108,9 @@ export function UploadDocumentForm() {
 
   const formatActionResult = (actionResult: Awaited<ReturnType<typeof uploadDocuments>>) => {
     const globalError = actionResult.errorKey ? t(`messages.${actionResult.errorKey}`) : null;
-    const failedItems = actionResult.results.filter((item) => item.errorKey);
+    const failedItems = actionResult.results.filter(
+      (item) => item.errorKey && item.errorKey !== "partySelectionRequired",
+    );
     const summary = t("messages.batchSummary", {
       success: actionResult.successCount,
       duplicates: actionResult.duplicateCount,
@@ -191,11 +199,58 @@ export function UploadDocumentForm() {
         item.versionSelection ? [item.versionSelection] : [],
       );
       if (pendingSelections.length > 0) setVersionSelections(pendingSelections);
+      const unknownParties = actionResult.results.flatMap((item, index) =>
+        item.partySelection && files[index]
+          ? [{ file: files[index], selection: item.partySelection, choices: {} }]
+          : [],
+      );
+      if (unknownParties.length) setPartySelections((current) => [...current, ...unknownParties]);
       setSelectedFiles(remainingFiles);
       if (remainingFiles.length === 0) form.reset();
       else form.setValue("document", remainingFiles);
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (actionResult.results.length > 0) router.refresh();
+    });
+  };
+
+  const confirmParties = (choices: PartyChoices) => {
+    const current = partySelections[0];
+    if (!current) return;
+    setPartyError(null);
+    startTransition(async () => {
+      const data = new FormData();
+      data.append("document", current.file);
+      const combined = { ...current.choices, ...choices };
+      data.append("partyChoices", JSON.stringify(combined));
+      try {
+        const actionResult = await uploadDocuments(data);
+        const item = actionResult.results[0];
+        const nextSelection = item?.partySelection;
+        if (nextSelection) {
+          setPartySelections((queue) => [
+            { ...current, selection: nextSelection, choices: combined },
+            ...queue.slice(1),
+          ]);
+          return;
+        }
+        if (actionResult.errorKey || (item?.errorKey && item.errorKey !== "duplicateDocument")) {
+          setPartyError(
+            actionResult.errorKey
+              ? t(`messages.${actionResult.errorKey}`)
+              : item?.errorKey === "partyResolutionFailed" && item.detail
+                ? counterpartiesT(`errors.${item.detail}`)
+                : t("messages.partyResolutionFailed"),
+          );
+          return;
+        }
+        const nextVersion = item?.versionSelection;
+        if (nextVersion) setVersionSelections((queue) => [...queue, nextVersion]);
+        setResult(formatActionResult(actionResult));
+        setPartySelections((queue) => queue.slice(1));
+        router.refresh();
+      } catch {
+        setPartyError(t("messages.requestFailed"));
+      }
     });
   };
 
@@ -219,10 +274,10 @@ export function UploadDocumentForm() {
       documentNumber: version.documentNumber ?? t("versionSelection.unknownValue"),
       sourceFileName: version.sourceFileName,
       recipientName: version.recipientName
-        ? normalizePartyName(version.recipientName)
+        ? version.recipientName
         : t("versionSelection.unknownValue"),
       supplierName: version.supplierName
-        ? normalizePartyName(version.supplierName)
+        ? version.supplierName
         : t("versionSelection.unknownValue"),
     };
   };
@@ -318,12 +373,26 @@ export function UploadDocumentForm() {
           </p>
         ) : null}
 
-        <Button disabled={isPending} type="submit">
+        <Button disabled={isPending || partySelections.length > 0} type="submit">
           {isPending ? <LoaderCircle className="animate-spin" /> : null}
           {isPending ? t("pending") : t("submit")}
         </Button>
       </form>
-      <AlertDialog open={currentVersionSelection !== null}>
+      {partySelections[0] ? (
+        <PartyChoiceDialog
+          key={`${partySelections[0].file.name}:${partySelections[0].selection.questions.map((q) => q.role).join(",")}`}
+          selection={partySelections[0].selection}
+          fileName={partySelections[0].file.name}
+          pending={isPending}
+          error={partyError}
+          onConfirm={confirmParties}
+          onCancel={() => {
+            setPartySelections((queue) => queue.slice(1));
+            setPartyError(null);
+          }}
+        />
+      ) : null}
+      <AlertDialog open={currentVersionSelection !== null && partySelections.length === 0}>
         <AlertDialogContent className="max-w-3xl rounded-[28px] border-[color:var(--line)] bg-[color:var(--panel-strong)] shadow-[var(--shadow)]">
           <AlertDialogHeader className="place-items-start text-left">
             <AlertDialogTitle className="font-[var(--font-display)] text-[1.7rem] leading-tight tracking-[-0.03em] text-[color:var(--ink)]">

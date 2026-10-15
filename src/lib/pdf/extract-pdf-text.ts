@@ -9,6 +9,8 @@ import {
   renderPageAsImage,
 } from "unpdf";
 
+import { preserveEmptyDiscountAmounts } from "./discount-table-text";
+
 export class PdfExtractionError extends Error {
   constructor(
     public readonly code:
@@ -42,6 +44,13 @@ export const extractPdfText = async (filePath: string): Promise<string> => {
     try {
       const { text } = await extractText(pdf, { mergePages: false });
       const pages = text.map((page) => page.replace(/\r/g, "").trim());
+      for (const [index, pageText] of pages.entries()) {
+        if (!/Номер\s+замовлення/u.test(pageText) || !/Знижка/u.test(pageText)) continue;
+        const page = await pdf.getPage(index + 1);
+        const content = await page.getTextContent();
+        const items = content.items.filter((item) => "str" in item);
+        pages[index] = preserveEmptyDiscountAmounts(items) ?? pageText;
+      }
       const scannedPages = pages.flatMap((page, index) => (page ? [] : [index + 1]));
       if (scannedPages.length > 0) {
         const ocrPages = await extractPdfTextWithOcr(binary, scannedPages);

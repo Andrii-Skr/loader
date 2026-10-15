@@ -105,24 +105,23 @@ const parsePartyTaxIds = (text: string): { supplierTaxId: string; recipientTaxId
       ? text.slice(partiesStart, sectionAStart)
       : text;
 
-  const supplierTaxId = partiesAndIdsBlock.match(/((?:\d\s*){12})/)?.[1]
-    ? joinSplitDigits(partiesAndIdsBlock.match(/((?:\d\s*){12})/)?.[1] ?? "")
-    : null;
-
-  const recipientTaxIdRaw = capture(
-    partiesAndIdsBlock,
-    /(4\s*3\s*1\s*6\s*9\s*6\s*9\s*2\s*6\s*5\s*4\s*2)/u,
-    "recipient.taxId",
-  );
-
-  if (!supplierTaxId || !recipientTaxIdRaw) {
+  // The form prints each 12-digit tax ID followed by an optional 8-digit
+  // registration code and a one-digit entity type. PDF extraction may flatten
+  // both counterparties into one uninterrupted run of digit cells.
+  const taxIds = Array.from(partiesAndIdsBlock.matchAll(/\d(?:\s*\d)*/gu)).flatMap((match) => {
+    const digits = joinSplitDigits(match[0]);
+    if ([12, 20, 21].includes(digits.length)) return [digits.slice(0, 12)];
+    if (digits.length === 24 || digits.length === 33)
+      return [digits.slice(0, 12), digits.slice(12, 24)];
+    if (digits.length === 40) return [digits.slice(0, 12), digits.slice(20, 32)];
+    if (digits.length === 42) return [digits.slice(0, 12), digits.slice(21, 33)];
+    return [];
+  });
+  const [supplierTaxId, recipientTaxId] = taxIds;
+  if (taxIds.length !== 2 || !supplierTaxId || !recipientTaxId) {
     throw new Error("Supplier or recipient tax id not found");
   }
-
-  return {
-    supplierTaxId,
-    recipientTaxId: joinSplitDigits(recipientTaxIdRaw),
-  };
+  return { supplierTaxId, recipientTaxId };
 };
 
 const stripLeadingPublicationPrefixes = (value: string): string => {
@@ -160,7 +159,7 @@ const stripLeadingPublicationPrefixes = (value: string): string => {
 const stripTrailingTechnicalTokens = (value: string): string => {
   const trailingPatterns = [
     /\s*[AАBВ]\d+\s*$/iu,
-    /\s*\/\s*укр\.?\s*$/iu,
+    /(?:\s*\/\s*|\s+)(?:укр|рос)\.?\s*\/?\s*$/iu,
     /\s*\*\s*\d{2,3}\s*стр\.?\s*$/iu,
     /\s*\*\s*\d{2,3}\s*стор\.?\s*$/iu,
     /\s*\d+\s*стр\.?\s*$/iu,
@@ -289,9 +288,14 @@ export const parsePublicationIssueDescriptionUaV1 = (
     return null;
   }
 
+  const russianLocale = /\/\s*рос\.?\s*\/?\s*$/iu.test(description);
   const rawPublication = description.slice(0, issueMarkerIndex);
   const rawIssue = description.slice(issueMarkerIndex);
-  const publicationName = normalizePublicationName(rawPublication);
+  const normalizedPublicationName = normalizePublicationName(rawPublication);
+  const publicationName =
+    russianLocale && !/\(R\)$/iu.test(normalizedPublicationName)
+      ? `${normalizedPublicationName} (R)`
+      : normalizedPublicationName;
   const normalizedRawIssueNumber = normalizeIssueNumber(rawIssue);
 
   if (!publicationName || !normalizedRawIssueNumber) {

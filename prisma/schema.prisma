@@ -9,28 +9,63 @@ datasource db {
 }
 
 model Supplier {
-  id        Int        @id @default(autoincrement())
+  aliases   SupplierAlias[]
+  id        Int             @id @default(autoincrement())
   name      String
-  taxId     String     @unique @map("tax_id")
-  kpp       String?    @map("kpp")
+  taxId     String          @unique @map("tax_id")
+  kpp       String?         @map("kpp")
   documents Document[]
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
 
   @@map("suppliers")
   @@schema("pdf_loader")
 }
 
 model Recipient {
-  id        Int        @id @default(autoincrement())
+  aliases   RecipientAlias[]
+  id        Int              @id @default(autoincrement())
   name      String
-  taxId     String     @unique @map("tax_id")
-  kpp       String?    @map("kpp")
+  taxId     String           @unique @map("tax_id")
+  kpp       String?          @map("kpp")
   documents Document[]
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
 
   @@map("recipients")
+  @@schema("pdf_loader")
+}
+
+// Canonical names remain in suppliers/recipients; aliases never replace them.
+model SupplierAlias {
+  id             Int             @id @default(autoincrement())
+  contour        DocumentContour
+  rawName        String          @map("raw_name")
+  normalizedName String          @map("normalized_name")
+  supplierId     Int             @map("supplier_id")
+  supplier       Supplier        @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  @@unique([contour, normalizedName])
+  @@index([supplierId])
+  @@map("supplier_aliases")
+  @@schema("pdf_loader")
+}
+
+model RecipientAlias {
+  id                  Int             @id @default(autoincrement())
+  contour             DocumentContour
+  rawName             String          @map("raw_name")
+  normalizedName      String          @map("normalized_name")
+  // Empty means global; otherwise this is the source supplier's stored tax ID.
+  sourceSupplierTaxId String          @default("") @map("source_supplier_tax_id")
+  recipientId         Int             @map("recipient_id")
+  recipient           Recipient       @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  createdAt           DateTime        @default(now()) @map("created_at")
+
+  @@unique([contour, normalizedName, sourceSupplierTaxId])
+  @@index([recipientId])
+  @@map("recipient_aliases")
   @@schema("pdf_loader")
 }
 

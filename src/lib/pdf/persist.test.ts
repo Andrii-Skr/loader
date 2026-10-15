@@ -29,6 +29,13 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+vi.mock("@/lib/counterparties/service", () => ({
+  resolveCounterparties: vi.fn(async () => ({
+    supplier: { id: 1, name: "Canonical supplier", taxId: "123456789012" },
+    recipient: { id: 2, name: "Canonical recipient", taxId: "210987654321" },
+  })),
+}));
+
 import { ingestVatInvoice } from "@/lib/pdf/persist";
 
 describe("ingestVatInvoice", () => {
@@ -263,29 +270,21 @@ describe("ingestVatInvoice", () => {
       rawText: "raw text",
     });
 
-    expect(prismaState.tx.supplier.upsert).toHaveBeenCalledWith({
-      where: { taxId: "123456789012/770101001" },
-      update: { name: 'ТОВ "Постачальник"', kpp: "770101001" },
-      create: {
-        name: 'ТОВ "Постачальник"',
-        taxId: "123456789012/770101001",
-        kpp: "770101001",
-      },
-    });
+    expect(prismaState.tx.supplier.findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: 1 } });
     expect(document.documentContour).toBe("RU");
     expect(document.parserVersion).toBe("vat-invoice-ru-v1");
   });
 
-  it("stores Ukrainian LLC counterparties without their legal-form prefix", async () => {
+  it("uses canonical counterparty cards without overwriting them from parsed names", async () => {
     parserMocks.parse.mockReturnValue({
       ...createParsedInvoice({ lineItems: [] }),
       supplier: {
-        name: 'ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ЛАНДПРЕСС"',
+        name: 'ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ "ДЕМО-ПРЕС"',
         taxId: "123456789012",
         kpp: null,
       },
       recipient: {
-        name: 'Товаристо з обмеженою відповідальністю "Видавництво "Кузя"',
+        name: 'Товаристо з обмеженою відповідальністю "Видавництво "Демо"',
         taxId: "210987654321",
         kpp: null,
       },
@@ -297,18 +296,10 @@ describe("ingestVatInvoice", () => {
       rawText: "raw text",
     });
 
-    expect(prismaState.tx.supplier.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        update: { name: '"ЛАНДПРЕСС"', kpp: null },
-        create: expect.objectContaining({ name: '"ЛАНДПРЕСС"' }),
-      }),
-    );
-    expect(prismaState.tx.recipient.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        update: { name: '"Кузя"', kpp: null },
-        create: expect.objectContaining({ name: '"Кузя"' }),
-      }),
-    );
+    expect(prismaState.tx.supplier.findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: 1 } });
+    expect(prismaState.tx.recipient.findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: 2 } });
+    expect(prismaState.tx.supplier.upsert).not.toHaveBeenCalled();
+    expect(prismaState.tx.recipient.upsert).not.toHaveBeenCalled();
   });
 });
 
@@ -403,6 +394,11 @@ function createTransactionMock() {
   return {
     store,
     supplier: {
+      findUniqueOrThrow: vi.fn(async () => ({
+        id: 1,
+        name: "Canonical supplier",
+        taxId: "123456789012",
+      })),
       upsert: vi.fn(
         async ({ create }: { create: { name: string; taxId: string; kpp: string | null } }) => ({
           id: 1,
@@ -411,6 +407,11 @@ function createTransactionMock() {
       ),
     },
     recipient: {
+      findUniqueOrThrow: vi.fn(async () => ({
+        id: 2,
+        name: "Canonical recipient",
+        taxId: "210987654321",
+      })),
       upsert: vi.fn(
         async ({ create }: { create: { name: string; taxId: string; kpp: string | null } }) => ({
           id: 2,

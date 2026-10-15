@@ -1,6 +1,6 @@
 const legalFormPrefix =
   /^(?:(?:товариство|товаристо)\s+з\s+обмеженою\s+відповідальністю|приватне\s+підприємство)\s+/iu;
-const publisherPrefix = /^(?:["«„“]\s*)?(?:видавництво|видавничий\s+дім)\s+/iu;
+const publisherPrefix = /^(?:["«„“]\s*)?(?:видавництво|видавничий\s+дім)(?:\s+|(?=["«„“]))/iu;
 
 /**
  * Stores a counterparty's own name without Ukrainian legal-form or publisher prefixes.

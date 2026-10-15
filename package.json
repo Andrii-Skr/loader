@@ -20,6 +20,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:backfill:issue-canon": "tsx prisma/backfill-issue-number-canon.ts",
+    "prisma:backfill:counterparties": "node --import tsx scripts/backfill-counterparty-aliases.ts",
     "prisma:seed": "prisma db seed",
     "prisma:studio": "prisma studio"
   },

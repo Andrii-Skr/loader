@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DocumentStatus } from "@/generated/prisma/client";
+import { PartySelectionRequired } from "@/lib/counterparties/service";
 import { InvalidDocumentDateError } from "@/lib/documents/date";
 import { InvoiceDetectionError } from "@/lib/pdf/parser";
 
+const resolvePartiesMock = vi.hoisted(() => vi.fn());
 const authMock = vi.hoisted(() => vi.fn());
 const saveUploadedFileMock = vi.hoisted(() => vi.fn());
 const extractPdfTextMock = vi.hoisted(() => vi.fn());
@@ -109,10 +111,32 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+vi.mock("@/lib/counterparties/service", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/counterparties/service")>(
+    "@/lib/counterparties/service",
+  )),
+  resolveCounterparties: resolvePartiesMock,
+}));
+
 import { deleteDocument, selectInvoiceVersion, uploadInvoice } from "@/app/actions/documents";
 
 describe("uploadInvoice", () => {
   beforeEach(() => {
+    resolvePartiesMock.mockReset();
+    resolvePartiesMock.mockImplementation(async (parsed, contour) => ({
+      supplier: {
+        id: 101,
+        name: parsed.supplier.name,
+        taxId: parsed.supplier.taxId
+          ? `${parsed.supplier.taxId}${contour === "RU" && parsed.supplier.kpp ? `/${parsed.supplier.kpp}` : ""}`
+          : ((await prismaState.supplierFindMany())[0]?.taxId ?? "name:unknown"),
+      },
+      recipient: {
+        id: 102,
+        name: parsed.recipient.name,
+        taxId: parsed.recipient.taxId ?? "name:recipient",
+      },
+    }));
     authMock.mockReset();
     saveUploadedFileMock.mockReset();
     extractPdfTextMock.mockReset();
@@ -167,6 +191,69 @@ describe("uploadInvoice", () => {
     selectInvoiceDocumentVersionMock.mockResolvedValue({ taxInvoiceDocumentIds: [] });
   });
 
+  const detectedForPartyReview = () => ({
+    contour: "UA",
+    documentTypeId: 2,
+    parserVersion: "invoice-ua-v1",
+    parsed: {
+      documentType: "Рахунок",
+      documentNumber: "1",
+      documentDate: "01.01.2026",
+      supplier: { name: "Supplier", taxId: "12345678", kpp: null },
+      recipient: { name: "Unknown", taxId: null, kpp: null },
+      baseAmount: "10.00",
+      vatAmount: "2.00",
+      totalAmount: "12.00",
+      lineItems: [],
+      rawText: "pdf text",
+      reviewRequired: false,
+    },
+  });
+  it("requests a counterparty choice without storing a document or counting a failure", async () => {
+    detectAndParseDocumentMock.mockReturnValue(detectedForPartyReview());
+    const question = {
+      role: "recipient" as const,
+      sourceName: "Unknown",
+      sourceTaxId: null,
+      suggestedName: "Unknown",
+      options: [],
+    };
+    resolvePartiesMock.mockRejectedValue(new PartySelectionRequired([question]));
+    const data = new FormData();
+    data.append("document", new File(["pdf"], "unknown.pdf"));
+    const result = await uploadInvoice(data);
+    expect(result.successCount).toBe(0);
+    expect(result.failedCount).toBe(0);
+    expect(result.results[0]).toMatchObject({
+      errorKey: "partySelectionRequired",
+      partySelection: { questions: [question] },
+    });
+    expect(prismaState.documentCreate).not.toHaveBeenCalled();
+    expect(ingestInvoiceDocumentMock).not.toHaveBeenCalled();
+    expect(unlinkMock).toHaveBeenCalledWith("/tmp/doc.pdf");
+  });
+  it("validates and forwards explicit choices while reparsing the uploaded file", async () => {
+    detectAndParseDocumentMock.mockReturnValue(detectedForPartyReview());
+    const choices = { recipient: { mode: "existing", id: 5 } };
+    const data = new FormData();
+    data.append("document", new File(["pdf"], "confirmed.pdf"));
+    data.append("partyChoices", JSON.stringify(choices));
+    const result = await uploadInvoice(data);
+    expect(result.successCount).toBe(1);
+    expect(resolvePartiesMock).toHaveBeenCalledWith(detectedForPartyReview().parsed, "UA", choices);
+    expect(detectAndParseDocumentMock).toHaveBeenCalledWith("pdf text");
+  });
+  it("rejects malformed or multi-file counterparty confirmations before saving files", async () => {
+    const data = new FormData();
+    data.append("document", new File(["pdf"], "one.pdf"));
+    data.append("partyChoices", '{"recipient":{"mode":"existing","id":-1}}');
+    expect((await uploadInvoice(data)).errorKey).toBe("invalidInput");
+    data.set("partyChoices", '{"recipient":{"mode":"existing","id":5}}');
+    data.append("document", new File(["pdf"], "two.pdf"));
+    expect((await uploadInvoice(data)).errorKey).toBe("invalidInput");
+    expect(saveUploadedFileMock).not.toHaveBeenCalled();
+  });
+
   it("allows the same supplier/date/number across different contours", async () => {
     detectAndParseDocumentMock.mockReturnValue({
       contour: "RU",
@@ -176,8 +263,8 @@ describe("uploadInvoice", () => {
         documentType: "Счет-фактура",
         documentNumber: "45",
         documentDate: "11.04.2026",
-        supplier: { name: 'ООО "Полипринт"', taxId: "7701234567", kpp: "770101001" },
-        recipient: { name: 'ООО "Кузя"', taxId: "7712345678", kpp: "771201001" },
+        supplier: { name: 'ООО "Демо-принт"', taxId: "7701234567", kpp: "770101001" },
+        recipient: { name: 'ООО "Демо"', taxId: "7712345678", kpp: "771201001" },
         totalAmount: "1.00",
         vatAmount: "0.20",
         baseAmount: "0.80",
@@ -209,6 +296,10 @@ describe("uploadInvoice", () => {
       select: { id: true },
     });
     expect(ingestVatInvoiceMock).toHaveBeenCalledWith({
+      resolvedParties: expect.objectContaining({
+        supplier: expect.objectContaining({ id: 101 }),
+        recipient: expect.objectContaining({ id: 102 }),
+      }),
       documentId: 501,
       contour: "RU",
       rawText: "pdf text",
@@ -224,8 +315,8 @@ describe("uploadInvoice", () => {
         documentType: "Счет-фактура",
         documentNumber: "101",
         documentDate: "02.04.2026",
-        supplier: { name: 'ООО "Полипринт"', taxId: "7701234567", kpp: "770101001" },
-        recipient: { name: 'ООО "Кузя"', taxId: "7712345678", kpp: "771201001" },
+        supplier: { name: 'ООО "Демо-принт"', taxId: "7701234567", kpp: "770101001" },
+        recipient: { name: 'ООО "Демо"', taxId: "7712345678", kpp: "771201001" },
         totalAmount: "1.00",
         vatAmount: "0.20",
         baseAmount: "0.80",
@@ -382,11 +473,11 @@ describe("uploadInvoice", () => {
 
     expect(result.successCount).toBe(1);
     expect(result.results[0].versionSelection?.previous.id).toBe(500);
-    expect(prismaState.supplierFindMany).toHaveBeenCalledWith({
-      where: { name: { equals: "Постачальник", mode: "insensitive" } },
-      select: { taxId: true },
-      take: 2,
-    });
+    expect(resolvePartiesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ supplier: expect.objectContaining({ name: "Постачальник" }) }),
+      "UA",
+      undefined,
+    );
     expect(prismaState.supplierFindUnique).toHaveBeenCalledWith({
       where: { taxId: "name:stored-supplier" },
       select: { id: true },
@@ -433,8 +524,8 @@ describe("uploadInvoice", () => {
         documentType: "Счет-фактура",
         documentNumber: "101",
         documentDate: "02.04.2026",
-        supplier: { name: 'ООО "Полипринт"', taxId: "7701234567", kpp: "770101001" },
-        recipient: { name: 'ООО "Кузя"', taxId: "7712345678", kpp: "771201001" },
+        supplier: { name: 'ООО "Демо-принт"', taxId: "7701234567", kpp: "770101001" },
+        recipient: { name: 'ООО "Демо"', taxId: "7712345678", kpp: "771201001" },
         totalAmount: "1.00",
         vatAmount: "0.20",
         baseAmount: "0.80",
@@ -471,8 +562,8 @@ describe("uploadInvoice", () => {
         documentType: "Рахунок на оплату",
         documentNumber: "101",
         documentDate: "02.04.2026",
-        supplier: { name: 'ТОВ "Поліпринт"', taxId: "12345678" },
-        recipient: { name: 'ТОВ "Кузя"', taxId: "87654321" },
+        supplier: { name: 'ТОВ "Демо-прінт"', taxId: "12345678" },
+        recipient: { name: 'ТОВ "Демо"', taxId: "87654321" },
         totalAmount: "1.00",
         vatAmount: "0.20",
         baseAmount: "0.80",
@@ -491,8 +582,8 @@ describe("uploadInvoice", () => {
       totalAmount: { toString: () => "1.00" },
       currency: "UAH",
       documentContour: "UA",
-      supplier: { name: 'ТОВ "Поліпрінт"' },
-      recipient: { name: 'ТОВ "Кузя"' },
+      supplier: { name: 'ТОВ "Демо-прінт"' },
+      recipient: { name: 'ТОВ "Демо"' },
     });
 
     const formData = new FormData();
@@ -501,6 +592,10 @@ describe("uploadInvoice", () => {
     const result = await uploadInvoice(formData);
 
     expect(ingestInvoiceDocumentMock).toHaveBeenCalledWith({
+      resolvedParties: expect.objectContaining({
+        supplier: expect.objectContaining({ id: 101 }),
+        recipient: expect.objectContaining({ id: 102 }),
+      }),
       documentId: 501,
       rawText: "pdf text",
       parsed: expect.objectContaining({ documentNumber: "101" }),
@@ -529,8 +624,8 @@ describe("uploadInvoice", () => {
         documentType: "Рахунок на оплату",
         documentNumber: "101",
         documentDate: "02.04.2026",
-        supplier: { name: 'ТОВ "Поліпрінт"', taxId: "12345678" },
-        recipient: { name: 'ТОВ "Кузя"', taxId: "87654321" },
+        supplier: { name: 'ТОВ "Демо-прінт"', taxId: "12345678" },
+        recipient: { name: 'ТОВ "Демо"', taxId: "87654321" },
         totalAmount: "1.00",
         vatAmount: "0.20",
         baseAmount: "0.80",
@@ -570,7 +665,7 @@ describe("uploadInvoice", () => {
     prismaState.documentFindMany.mockResolvedValue([
       {
         totalAmount: { toString: () => "1.00" },
-        recipient: { name: 'ТОВ "Кузя"', taxId: "87654321" },
+        recipient: { name: 'ТОВ "Демо"', taxId: "87654321" },
         lineItems: [
           {
             description: "Послуга",
@@ -681,8 +776,8 @@ describe("uploadInvoice", () => {
         documentType: "Счет-фактура",
         documentNumber: "101",
         documentDate: "02.04.2026",
-        supplier: { name: 'ООО "Полипринт"', taxId: "7701234567", kpp: "770101001" },
-        recipient: { name: 'ООО "Кузя"', taxId: "7712345678", kpp: "771201001" },
+        supplier: { name: 'ООО "Демо-принт"', taxId: "7701234567", kpp: "770101001" },
+        recipient: { name: 'ООО "Демо"', taxId: "7712345678", kpp: "771201001" },
         totalAmount: "1.00",
         vatAmount: "0.20",
         baseAmount: "0.80",

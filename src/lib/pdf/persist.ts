@@ -1,8 +1,7 @@
 import { DocumentStatus, Prisma } from "@/generated/prisma/client";
 import { parseDocumentDate } from "@/lib/documents/date";
 
-import { normalizePartyName } from "@/lib/documents/party-name";
-import { resolvePartyTaxId } from "@/lib/documents/party-tax-id";
+import { type ResolvedParties, resolveCounterparties } from "@/lib/counterparties/service";
 import { needsInvoiceReview } from "@/lib/pdf/integrity";
 import {
   type DocumentContour,
@@ -28,6 +27,7 @@ type IngestVatInvoiceInput = {
   rawText: string;
   contour: DocumentContour;
   parserOverride?: DocumentParser;
+  resolvedParties?: ResolvedParties;
 };
 
 export const ingestVatInvoice = async ({
@@ -35,53 +35,16 @@ export const ingestVatInvoice = async ({
   rawText,
   contour,
   parserOverride,
+  resolvedParties,
 }: IngestVatInvoiceInput) => {
   const parser = parserOverride ?? getInvoiceParserByContour(contour);
   const parsed = parser.parse(rawText);
   const documentDate = parseDocumentDate(parsed.documentDate);
-  const supplierName = normalizePartyName(parsed.supplier.name);
-  const recipientName = normalizePartyName(parsed.recipient.name);
-  const supplierTaxId = await resolvePartyTaxId({
-    party: { ...parsed.supplier, name: supplierName },
-    contour,
-    findExistingTaxIds: (name) =>
-      prisma.supplier.findMany({
-        where: { name: { equals: name, mode: "insensitive" } },
-        select: { taxId: true },
-        take: 2,
-      }),
-  });
-  const recipientTaxId = await resolvePartyTaxId({
-    party: { ...parsed.recipient, name: recipientName },
-    contour,
-    findExistingTaxIds: (name) =>
-      prisma.recipient.findMany({
-        where: { name: { equals: name, mode: "insensitive" } },
-        select: { taxId: true },
-        take: 2,
-      }),
-  });
+  const parties = resolvedParties ?? (await resolveCounterparties(parsed, contour));
 
   return prisma.$transaction(async (tx) => {
-    const supplier = await tx.supplier.upsert({
-      where: { taxId: supplierTaxId },
-      update: { name: supplierName, kpp: parsed.supplier.kpp },
-      create: {
-        name: supplierName,
-        taxId: supplierTaxId,
-        kpp: parsed.supplier.kpp,
-      },
-    });
-
-    const recipient = await tx.recipient.upsert({
-      where: { taxId: recipientTaxId },
-      update: { name: recipientName, kpp: parsed.recipient.kpp },
-      create: {
-        name: recipientName,
-        taxId: recipientTaxId,
-        kpp: parsed.recipient.kpp,
-      },
-    });
+    const supplier = await tx.supplier.findUniqueOrThrow({ where: { id: parties.supplier.id } });
+    const recipient = await tx.recipient.findUniqueOrThrow({ where: { id: parties.recipient.id } });
 
     await tx.specialDocument.deleteMany({
       where: { documentId },
@@ -233,16 +196,19 @@ export const ingestInvoiceDocument = async ({
   rawText,
   parsed,
   parserVersion = "invoice-ua-v1",
+  resolvedParties,
 }: {
   documentId: number;
   rawText: string;
   parsed: ParsedVatInvoice;
   parserVersion?: string;
+  resolvedParties?: ResolvedParties;
 }) =>
   ingestVatInvoice({
     documentId,
     rawText,
     contour: "UA",
+    resolvedParties,
     parserOverride: {
       parserVersion,
       lookupLocale: "uk-UA",
