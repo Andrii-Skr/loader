@@ -111,6 +111,57 @@ describe("invoice parser registry", () => {
 });
 
 describe("parseUaInvoiceDocument", () => {
+  it.each([
+    { quantity: "750", expected: "750", base: "2 610,00", vat: "522,00", total: "3 132,00" },
+    { quantity: "1 850", expected: "1850", base: "6 438,00", vat: "1 287,60", total: "7 725,60" },
+    {
+      quantity: "10 000",
+      expected: "10000",
+      base: "34 800,00",
+      vat: "6 960,00",
+      total: "41 760,00",
+    },
+    { quantity: "1,5", expected: "1.5", base: "5,22", vat: "1,04", total: "6,26" },
+  ])(
+    "keeps the issue number separate from quantity $quantity",
+    ({ quantity, expected, base, vat, total }) => {
+      const detected =
+        detectAndParseDocument(`Рахунок на оплату по замовленню № 9017 від 18 серпня 2026 р.
+Постачальник: ТОВ Демо-Друк
+Покупець: ТОВ Демо
+Договір: № ДЕМО
+№ Код Товар Кількість Ціна без
+ПДВ
+Сума без
+ПДВ
+1 000000001 друк газети "Демо газета" № 9 ${quantity} шт 3,48000 ${base}
+Разом: ${base}
+Сума ПДВ: ${vat}
+Всього із ПДВ: ${total}`);
+      const { parsed } = detected;
+
+      expect(parsed.lineItems).toHaveLength(1);
+      expect(parsed.lineItems[0]).toMatchObject({
+        description: 'друк газети "Демо газета" № 9',
+        quantity: expected,
+        unitName: "шт",
+        unitPrice: "3.48000",
+        lineBaseAmount: base.replace(/ /g, "").replace(",", "."),
+      });
+      expect(
+        detected.parsePublicationIssueDescription(
+          parsed.lineItems[0]?.description ?? "",
+          parsed.documentDate,
+        ),
+      ).toEqual({
+        publicationName: "Демо газета",
+        rawIssueNumber: "9",
+        canonicalIssueNumber: "09-26",
+      });
+      expect(parsed.reviewRequired).toBe(false);
+    },
+  );
+
   it("preserves the calendar error when detecting a regular invoice", () => {
     const text = `Рахунок № 1 від 31 квітня 2026 р.
 Постачальник: ТОВ Альфа

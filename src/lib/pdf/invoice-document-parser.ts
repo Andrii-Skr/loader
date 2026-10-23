@@ -179,7 +179,9 @@ const parseInvoiceLines = (rawText: string): ParsedLineItem[] => {
 
   const matches = Array.from(
     table.matchAll(
-      /(?:^|\s)(\d+)\s+(.*?)(\d+(?:\s+\d+)?)\s+([\p{L}.]+)\s+(\d[\d\s]*[,.]\d{2,10})\s+(\d[\d\s]*[,.]\d{2})/gisu,
+      // The issue number belongs to the description: "№ 9 750 шт" means
+      // issue 9, quantity 750. Only three-digit groups may extend a quantity.
+      /(?:^|\s)(\d+)\s+(.*?[^№\s])\s+(\d+(?:\s+\d{3})*(?:[,.]\d+)?)\s+([\p{L}.]+)\s+(\d[\d\s]*[,.]\d{2,10})\s+(\d[\d\s]*[,.]\d{2})/gisu,
     ),
   );
 
