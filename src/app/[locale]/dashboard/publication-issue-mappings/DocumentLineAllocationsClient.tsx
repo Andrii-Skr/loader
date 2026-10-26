@@ -21,9 +21,17 @@ import {
   allocationDraftsSchema,
   getExcludedAllocationIssueIds,
 } from "@/lib/publication-mappings/allocation-drafts";
-import { summarizeAllocationDrafts } from "@/lib/publication-mappings/calculations";
+import {
+  getRemainingAllocationQuantity,
+  summarizeAllocationDrafts,
+} from "@/lib/publication-mappings/calculations";
+import { createCollectionDrafts } from "@/lib/publication-mappings/collection-presets";
 import { formatUnitPrice } from "@/lib/publication-mappings/price";
-import type { DocumentLineAllocationDto } from "@/lib/publication-mappings/types";
+import type {
+  CollectionPresetDto,
+  DocumentLineAllocationDto,
+} from "@/lib/publication-mappings/types";
+import { CollectionPresetControls } from "./CollectionPresetControls";
 
 const toInitialDrafts = (line: DocumentLineAllocationDto): AllocationDraft[] => {
   if (line.allocations.length > 0) {
@@ -45,6 +53,10 @@ const toInitialDrafts = (line: DocumentLineAllocationDto): AllocationDraft[] => 
     });
   }
 
+  if (line.collectionPreset && !line.collectionPreset.unavailable) {
+    const drafts = createCollectionDrafts(line, line.collectionPreset, "preset");
+    if (drafts.length > 0) return drafts;
+  }
   return [createDraft(line, 0)];
 };
 
@@ -102,7 +114,13 @@ export function DocumentLineAllocationsClient({
       const drafts = current[line.specialDocumentId] ?? [];
       return {
         ...current,
-        [line.specialDocumentId]: [...drafts, createDraft(line, draftIndex)],
+        [line.specialDocumentId]: [
+          ...drafts,
+          {
+            ...createDraft(line, draftIndex),
+            quantity: getRemainingAllocationQuantity(line.quantity, drafts),
+          },
+        ],
       };
     });
   };
@@ -173,6 +191,14 @@ export function DocumentLineAllocationsClient({
 
       {lines.map((line) => (
         <DocumentLineAllocationEditor
+          documentId={documentId}
+          onApplyPreset={(presetLine, preset) => {
+            if (line.allocations.length > 0) return;
+            const prefix = `preset-${nextDraftIdRef.current++}`;
+            const drafts = createCollectionDrafts(presetLine, preset, prefix);
+            if (drafts.length > 0)
+              setDraftsByLineId((current) => ({ ...current, [line.specialDocumentId]: drafts }));
+          }}
           drafts={draftsByLineId[line.specialDocumentId] ?? []}
           key={line.specialDocumentId}
           line={line}
@@ -187,6 +213,8 @@ export function DocumentLineAllocationsClient({
 }
 
 function DocumentLineAllocationEditor({
+  documentId,
+  onApplyPreset,
   drafts,
   line,
   locale,
@@ -194,6 +222,8 @@ function DocumentLineAllocationEditor({
   onRemove,
   onUpdate,
 }: {
+  documentId: number;
+  onApplyPreset: (line: DocumentLineAllocationDto, preset: CollectionPresetDto) => void;
   drafts: AllocationDraft[];
   line: DocumentLineAllocationDto;
   locale: AppLocale;
@@ -225,6 +255,13 @@ function DocumentLineAllocationEditor({
         </div>
       </div>
 
+      <CollectionPresetControls
+        documentId={documentId}
+        line={line}
+        drafts={drafts}
+        locale={locale}
+        onApply={onApplyPreset}
+      />
       <div className="grid gap-3">
         {drafts.map((draft) => (
           <div
@@ -282,6 +319,8 @@ function DocumentLineAllocationEditor({
             <label className="grid gap-1 text-xs text-[color:var(--ink-soft)]">
               {t("allocationIssue")}
               <Combobox
+                key={draft.externalEditionId ?? "no-edition"}
+                searchOnEmpty
                 disabled={draft.externalEditionId === null}
                 excludedValues={getExcludedAllocationIssueIds(
                   drafts,
@@ -302,18 +341,19 @@ function DocumentLineAllocationEditor({
                 normalizedClientFilter
                 onSearch={async (query) => {
                   if (draft.externalEditionId === null) return [];
-                  const result = line.publicationIssueId
-                    ? await searchIssueNumberMappingCandidates({
-                        locale,
-                        publicationIssueId: line.publicationIssueId,
-                        externalEditionId: draft.externalEditionId,
-                        query,
-                      })
-                    : await searchDocumentAllocationIssues({
-                        locale,
-                        externalEditionId: draft.externalEditionId,
-                        query,
-                      });
+                  const result =
+                    line.publicationIssueId && query.trim()
+                      ? await searchIssueNumberMappingCandidates({
+                          locale,
+                          publicationIssueId: line.publicationIssueId,
+                          externalEditionId: draft.externalEditionId,
+                          query,
+                        })
+                      : await searchDocumentAllocationIssues({
+                          locale,
+                          externalEditionId: draft.externalEditionId,
+                          query,
+                        });
                   if (result.errorKey) {
                     setSearchError(t(`messages.${result.errorKey}`));
                     return [];

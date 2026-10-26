@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Link, redirect } from "@/i18n/navigation";
 import { type AppLocale, routing } from "@/i18n/routing";
+import { enrichCollectionLine } from "@/lib/publication-mappings/collection-presets-service";
 import { pickInitialPublicationCandidate } from "@/lib/publication-mappings/editor";
 import {
   getDocumentLineAllocations,
@@ -59,7 +60,11 @@ export default async function PublicationIssueMappingsPage({
 
   const [registry, documentLines, t, common] = await Promise.all([
     getPublicationIssueRegistry(filter, documentId),
-    documentId ? getDocumentLineAllocations(documentId) : Promise.resolve([]),
+    documentId
+      ? getDocumentLineAllocations(documentId).then((lines) =>
+          Promise.all(lines.map((line) => enrichCollectionLine(line))),
+        )
+      : Promise.resolve([]),
     getTranslations({ locale, namespace: "PublicationMappings" }),
     getTranslations({ locale, namespace: "Common" }),
   ]);

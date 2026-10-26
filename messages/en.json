@@ -321,7 +321,7 @@
     "allocationTotal": "Allocated total: {total}",
     "allocationQuantityTotal": "Allocated quantity: {allocated} of {source}",
     "allocationMoneyWarning": "The allocated total differs from the PDF line total.",
-    "allocationAdd": "Add allocation",
+    "allocationAdd": "Add edition",
     "allocationRemove": "Remove allocation",
     "emptyPublicationCandidates": "No publication candidates found. Try a broader search.",
     "emptyIssueNumberCandidates": "No issue number candidates found. Try a broader search.",
@@ -347,8 +347,24 @@
       "incompleteAllocation": "Choose a publication and issue for every allocation, or remove the unfinished row.",
       "pricePrecision": "Enter a non-negative price with at most two decimal places and 13 digits before the decimal point.",
       "quantityPrecision": "Enter a quantity with at most three decimal places and 12 digits before the decimal point.",
-      "saved": "Mappings saved."
-    }
+      "saved": "Mappings saved.",
+      "presetNameRequired": "Enter a collection name (up to 160 characters).",
+      "presetEditionsRequired": "Select an edition for every row before remembering the composition.",
+      "presetSaved": "Composition and name variant saved.",
+      "presetDeleted": "Composition forgotten. Document allocations are unchanged.",
+      "presetConflict": "This name or description is already linked to another collection.",
+      "presetUnavailable": "An edition in this composition is no longer available. Update the composition; it has not been applied.",
+      "presetRequestFailed": "Could not complete the request. Please try again."
+    },
+    "presetHelp": "A collection remembers editions only. Choose issues and allocate quantities for the current document. Select an existing collection and click Remember composition to link this description.",
+    "presetSelected": "Selected collection: {name}",
+    "presetName": "Collection name",
+    "presetExisting": "Saved collection",
+    "presetChoose": "Choose a collection",
+    "presetEmpty": "No saved collections found.",
+    "presetSearch": "Search collections",
+    "presetRemember": "Remember composition",
+    "presetForget": "Forget composition"
   },
   "Counterparties": {
     "title": "Counterparties",

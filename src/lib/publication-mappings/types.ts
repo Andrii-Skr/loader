@@ -57,7 +57,17 @@ export type DocumentExternalMatchDetailDto = {
   isPrimary: boolean;
 };
 
+export type CollectionPresetDto = {
+  id: number;
+  name: string;
+  editions: Array<{ externalEditionId: number; externalEditionName: string }>;
+  unavailable: boolean;
+};
+
 export type DocumentLineAllocationDto = {
+  parsedPublicationName?: string | null;
+  collectionPreset?: CollectionPresetDto | null;
+  presetIssueCandidates?: Record<number, IssueNumberCandidateDto[]>;
   specialDocumentId: number;
   lineNo: number;
   description: string;

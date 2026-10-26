@@ -383,3 +383,44 @@ enum UserRole {
 
   @@schema("pdf_loader")
 }
+
+// Shared edition-only composition; issue and financial data stay on document allocations.
+model CollectionPreset {
+  id             Int                       @id @default(autoincrement())
+  name           String
+  normalizedName String                    @map("normalized_name")
+  sourceCode     String                    @map("source_code")
+  editions       CollectionPresetEdition[]
+  aliases        CollectionPresetAlias[]
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+
+  @@unique([sourceCode, normalizedName])
+  @@map("collection_presets")
+  @@schema("pdf_loader")
+}
+
+model CollectionPresetEdition {
+  id                Int              @id @default(autoincrement())
+  presetId          Int              @map("preset_id")
+  externalEditionId Int              @map("external_edition_id")
+  position          Int
+  preset            CollectionPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+
+  @@unique([presetId, externalEditionId])
+  @@map("collection_preset_editions")
+  @@schema("pdf_loader")
+}
+
+model CollectionPresetAlias {
+  id         Int              @id @default(autoincrement())
+  presetId   Int              @map("preset_id")
+  sourceCode String           @map("source_code")
+  key        String
+  preset     CollectionPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceCode, key])
+  @@index([presetId])
+  @@map("collection_preset_aliases")
+  @@schema("pdf_loader")
+}

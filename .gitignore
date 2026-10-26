@@ -8,7 +8,8 @@ coverage
 playwright-report
 test-results
 dist
-e2e
+e2e/*
+!e2e/collection-presets.spec.ts
 *.tsbuildinfo
 storage/uploads
 src/generated/prisma

@@ -24,6 +24,7 @@ type ComboboxMessages = {
 
 export function Combobox({
   disabled = false,
+  searchOnEmpty = false,
   excludedValues,
   initialOptions,
   messages,
@@ -36,6 +37,7 @@ export function Combobox({
   widthClassName,
 }: {
   disabled?: boolean;
+  searchOnEmpty?: boolean;
   contentClassName?: string;
   excludedValues?: Set<number>;
   initialOptions: ComboboxOption[];
@@ -69,10 +71,10 @@ export function Combobox({
   });
 
   useEffect(() => {
-    if (!open || query.trim().length === 0) {
+    if (!open || (!searchOnEmpty && query.trim().length === 0)) {
       setOptions(initialOptions);
     }
-  }, [initialOptions, open, query]);
+  }, [initialOptions, open, query, searchOnEmpty]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Effect Events change identity on every render and must not be dependencies.
   useEffect(() => {
@@ -85,7 +87,7 @@ export function Combobox({
 
     const normalizedQuery = query.trim();
 
-    if (normalizedQuery.length === 0) {
+    if (normalizedQuery.length === 0 && !searchOnEmpty) {
       searchRequestIdRef.current += 1;
       setOptions(initialOptionsRef.current);
       return;
@@ -94,14 +96,17 @@ export function Combobox({
     const requestId = searchRequestIdRef.current + 1;
     searchRequestIdRef.current = requestId;
 
-    const timeoutId = window.setTimeout(() => {
-      startSearchTransition(async () => {
-        await runSearch(normalizedQuery, requestId);
-      });
-    }, 250);
+    const timeoutId = window.setTimeout(
+      () => {
+        startSearchTransition(async () => {
+          await runSearch(normalizedQuery, requestId);
+        });
+      },
+      normalizedQuery.length === 0 ? 0 : 250,
+    );
 
     return () => window.clearTimeout(timeoutId);
-  }, [open, query]);
+  }, [open, query, searchOnEmpty]);
 
   const visibleOptions = useMemo(() => {
     const currentValue = selectedOption?.value;

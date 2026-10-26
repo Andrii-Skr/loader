@@ -54,3 +54,21 @@ export const summarizeAllocationDrafts = (
     hasMoneyWarning: total.minus(sourceTotal).abs().gt("0.009"),
   };
 };
+
+// Empty rows do not consume quantity; an invalid value prevents guessing a remainder.
+export const getRemainingAllocationQuantity = (
+  sourceQuantity: string,
+  drafts: Array<{ quantity: string }>,
+): string => {
+  const schema = quantitySchema("invalid");
+  const source = schema.safeParse(sourceQuantity);
+  if (!source.success) return "";
+  let remaining = new ExactDecimal(source.data);
+  for (const draft of drafts) {
+    if (!draft.quantity.trim()) continue;
+    const quantity = schema.safeParse(draft.quantity);
+    if (!quantity.success) return "";
+    remaining = remaining.minus(quantity.data);
+  }
+  return remaining.gt(0) ? remaining.toString() : "";
+};

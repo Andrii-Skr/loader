@@ -3,6 +3,8 @@ import createNextIntlPlugin from "next-intl/plugin";
 
 const nextConfig: NextConfig = {
   experimental: {
+    // Avoid sustained CPU usage restoring/compacting the local Turbopack disk cache.
+    turbopackFileSystemCacheForDev: false,
     serverActions: {
       bodySizeLimit: "10mb",
     },
