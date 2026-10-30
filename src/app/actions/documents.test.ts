@@ -592,6 +592,7 @@ describe("uploadInvoice", () => {
     const result = await uploadInvoice(formData);
 
     expect(ingestInvoiceDocumentMock).toHaveBeenCalledWith({
+      contour: "UA",
       resolvedParties: expect.objectContaining({
         supplier: expect.objectContaining({ id: 101 }),
         recipient: expect.objectContaining({ id: 102 }),

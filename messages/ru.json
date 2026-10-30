@@ -254,6 +254,7 @@
       "duplicateDocument": "Этот документ уже есть в реестре.",
       "documentContourUnknown": "PDF не совпал ни с одним поддерживаемым контуром накладной",
       "documentContourAmbiguous": "PDF одинаково совпал с несколькими контурами накладной",
+      "multipleInvoicesInFile": "В PDF несколько счетов. Загрузите каждый счёт отдельным файлом.",
       "savedAndParsed": "Документ сохранен и разобран.",
       "batchSummary": "Загружено: {success}. Заменено прежних версий: {replacements}. Дубликатов: {duplicates}. Ошибок: {failed}.",
       "replacementDetails": "Цепочка замены: {replacements}.",

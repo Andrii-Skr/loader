@@ -254,6 +254,7 @@
       "duplicateDocument": "This document is already in the registry.",
       "documentContourUnknown": "The PDF did not match any supported invoice contour",
       "documentContourAmbiguous": "The PDF matched multiple invoice contours",
+      "multipleInvoicesInFile": "This PDF contains several invoices. Upload each invoice as a separate file.",
       "savedAndParsed": "Document was saved and parsed.",
       "batchSummary": "Uploaded: {success}. Replaced previous versions: {replacements}. Duplicates: {duplicates}. Errors: {failed}.",
       "replacementDetails": "Replacement chain: {replacements}.",

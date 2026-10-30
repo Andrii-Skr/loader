@@ -254,6 +254,7 @@
       "duplicateDocument": "Цей документ уже є в реєстрі.",
       "documentContourUnknown": "PDF не збігся з жодним підтримуваним контуром накладної",
       "documentContourAmbiguous": "PDF однаково збігся з кількома контурами накладної",
+      "multipleInvoicesInFile": "У PDF кілька рахунків. Завантажте кожен рахунок окремим файлом.",
       "savedAndParsed": "Документ збережено та розібрано.",
       "batchSummary": "Завантажено: {success}. Замінено попередніх версій: {replacements}. Дублікатів: {duplicates}. Помилок: {failed}.",
       "replacementDetails": "Ланцюжок заміни: {replacements}.",

@@ -36,9 +36,24 @@ vi.mock("@/lib/counterparties/service", () => ({
   })),
 }));
 
-import { ingestVatInvoice } from "@/lib/pdf/persist";
+import { ingestInvoiceDocument, ingestVatInvoice } from "@/lib/pdf/persist";
 
 describe("ingestVatInvoice", () => {
+  it("stores ordinary RU invoices with RUB and Russian publication matching", async () => {
+    const document = await ingestInvoiceDocument({
+      documentId: 101,
+      contour: "RU",
+      parserVersion: "invoice-ru-pdf-v1",
+      rawText: "raw",
+      parsed: createParsedInvoice({ lineItems: [createLineItem('Газета "Демо" №5')] }),
+    });
+    expect(document.documentContour).toBe("RU");
+    expect(document.currency).toBe("RUB");
+    expect(document.parserVersion).toBe("invoice-ru-pdf-v1");
+    expect(document.reviewRequired).toBe(false);
+    expect(prismaState.tx.store.publications.has("демо")).toBe(true);
+    expect(getCreatedLineItem(0)?.publicationIssueId).toBe(1);
+  });
   it("stores a partially extracted table as NEEDS_REVIEW even if the parser misses the flag", async () => {
     parserMocks.parse.mockReturnValue({
       ...createParsedInvoice({ lineItems: [createLineItem('ж-л "Філворди" №4')] }),

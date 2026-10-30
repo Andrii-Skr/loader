@@ -20,6 +20,7 @@ import {
 import { saveUploadedFile } from "@/lib/files/save-upload";
 import { PdfExtractionError, extractPdfText } from "@/lib/pdf/extract-pdf-text";
 import { parseLandpressXls } from "@/lib/pdf/invoice-document-parser";
+import { UnsupportedRuInvoiceXlsError, parseRuInvoiceXls } from "@/lib/pdf/invoice-ru";
 import {
   type DocumentContour,
   InvoiceDetectionError,
@@ -61,6 +62,7 @@ export type UploadInvoiceActionResult = {
       | "duplicateDocument"
       | "documentContourAmbiguous"
       | "documentContourUnknown"
+      | "multipleInvoicesInFile"
       | "parseFailed"
       | "invalidDocumentDate"
       | "pdfReadFailed"
@@ -399,12 +401,23 @@ const uploadSingleDocument = async ({
     };
 
     if (isXls) {
-      detectedDocument = {
-        contour: "UA" as const,
-        parserVersion: "invoice-ua-xls-landpress-v1",
-        documentTypeId: 2 as const,
-        parsed: parseLandpressXls(fileBytes),
-      };
+      // Only fall back on layout detection errors; invalid dates must propagate.
+      try {
+        detectedDocument = {
+          contour: "RU",
+          parserVersion: "invoice-ru-xls-v1",
+          documentTypeId: 2,
+          parsed: parseRuInvoiceXls(fileBytes),
+        };
+      } catch (error) {
+        if (!(error instanceof UnsupportedRuInvoiceXlsError)) throw error;
+        detectedDocument = {
+          contour: "UA",
+          parserVersion: "invoice-ua-xls-landpress-v1",
+          documentTypeId: 2,
+          parsed: parseLandpressXls(fileBytes),
+        };
+      }
     } else {
       resolvedText = extractedText || (await extractPdfText(sourceFilePath));
       detectedDocument = detectAndParseDocument(resolvedText);
@@ -482,6 +495,7 @@ const uploadSingleDocument = async ({
     } else {
       await ingestInvoiceDocument({
         documentId: createdDocumentId,
+        contour,
         rawText: resolvedText ?? parsed.rawText,
         parsed,
         parserVersion,

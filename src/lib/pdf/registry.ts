@@ -1,6 +1,11 @@
 import { InvalidDocumentDateError } from "@/lib/documents/date";
 import { parseUaInvoiceDocument } from "@/lib/pdf/invoice-document-parser";
 import {
+  countRuPaymentInvoices,
+  isRuPaymentInvoice,
+  parseRuPaymentInvoice,
+} from "@/lib/pdf/invoice-ru";
+import {
   detectVatInvoiceRuV1,
   parsePublicationIssueDescriptionRuV1,
   parseVatInvoiceRuV1,
@@ -46,7 +51,10 @@ const invoiceParsers: InvoiceParser[] = [
 
 export class InvoiceDetectionError extends Error {
   constructor(
-    public readonly code: "documentContourUnknown" | "documentContourAmbiguous",
+    public readonly code:
+      | "documentContourUnknown"
+      | "documentContourAmbiguous"
+      | "multipleInvoicesInFile",
     message: string,
   ) {
     super(message);
@@ -112,6 +120,19 @@ export type DetectedDocument = {
 };
 
 export const detectAndParseDocument = (rawText: string): DetectedDocument => {
+  if (countRuPaymentInvoices(rawText) > 1) {
+    throw new InvoiceDetectionError("multipleInvoicesInFile", "Multiple invoices in one file");
+  }
+  if (isRuPaymentInvoice(rawText)) {
+    return {
+      contour: "RU",
+      parserVersion: "invoice-ru-pdf-v1",
+      documentTypeId: 2,
+      parsed: parseRuPaymentInvoice(rawText),
+      parsePublicationIssueDescription: parsePublicationIssueDescriptionRuV1,
+      lookupLocale: "ru-RU",
+    };
+  }
   let invoiceDetectionError: InvoiceDetectionError | null = null;
 
   try {

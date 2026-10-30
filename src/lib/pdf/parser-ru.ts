@@ -18,8 +18,11 @@ const RU_MONTHS: Record<string, string> = {
   декабря: "12",
 };
 
-const parseRuInvoiceDate = (value: string): string => {
+export const parseRuInvoiceDate = (value: string): string => {
   const normalized = normalizeSpaces(value).replace(/\s*г\.?$/u, "");
+  if (/^\d{1,2}\.\d{1,2}\.\d{4}$/u.test(normalized)) {
+    return validateDocumentDate(normalized);
+  }
   const match = normalized.match(/^(\d{1,2})\s+([а-яё]+)\s+(\d{4})$/iu);
 
   if (!match?.[1] || !match[2] || !match[3]) {
@@ -72,7 +75,7 @@ const captureNamedBlock = (
 
 const stripRuPublicationPrefix = (value: string): string =>
   value
-    .replace(/^типографские\s+работы\s+по\s+печати\s+/iu, "")
+    .replace(/^(?:типографские|полиграфические)\s+работы\s+по\s+печати\s+/iu, "")
     .replace(/^печать\s*/iu, "")
     .replace(/^услуга\s+по\s+печати\s+/iu, "")
     .replace(/^журнала\s+/iu, "")

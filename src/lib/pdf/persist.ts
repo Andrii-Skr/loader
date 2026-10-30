@@ -8,6 +8,7 @@ import {
   getInvoiceParserByContour,
   normalizeLookupKey,
 } from "@/lib/pdf/parser";
+import { parsePublicationIssueDescriptionRuV1 } from "@/lib/pdf/parser-ru";
 import { parsePublicationIssueDescriptionUaV1 } from "@/lib/pdf/parser-ua";
 import type { ParsedPublicationIssue, ParsedVatInvoice } from "@/lib/pdf/types";
 import { prisma } from "@/lib/prisma";
@@ -196,24 +197,29 @@ export const ingestInvoiceDocument = async ({
   rawText,
   parsed,
   parserVersion = "invoice-ua-v1",
+  contour = "UA",
   resolvedParties,
 }: {
   documentId: number;
   rawText: string;
   parsed: ParsedVatInvoice;
   parserVersion?: string;
+  contour?: DocumentContour;
   resolvedParties?: ResolvedParties;
 }) =>
   ingestVatInvoice({
     documentId,
     rawText,
-    contour: "UA",
+    contour,
     resolvedParties,
     parserOverride: {
       parserVersion,
-      lookupLocale: "uk-UA",
+      lookupLocale: contour === "RU" ? "ru-RU" : "uk-UA",
       parse: () => parsed,
-      parsePublicationIssueDescription: parsePublicationIssueDescriptionUaV1,
+      parsePublicationIssueDescription:
+        contour === "RU"
+          ? parsePublicationIssueDescriptionRuV1
+          : parsePublicationIssueDescriptionUaV1,
     },
   });
 
